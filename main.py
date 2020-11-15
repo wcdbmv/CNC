@@ -62,6 +62,7 @@ import socket
 import asyncore
 import asynchat
 import collections
+from enum import Enum
 from libemail.header_value_parser import get_addr_spec, get_angle_addr
 
 __all__ = [
@@ -85,8 +86,9 @@ def usage(code, msg=''):
 
 
 class SmtpStream(asynchat.async_chat):
-    COMMAND = 0
-    DATA = 1
+    class State(Enum):
+        COMMAND = 0
+        DATA = 1
 
     command_size_limit = 512
     command_size_limits = collections.defaultdict(lambda x=command_size_limit: x)
@@ -139,7 +141,7 @@ class SmtpStream(asynchat.async_chat):
 
     def _set_post_data_state(self):
         """Reset state variables to their post-DATA state."""
-        self.smtp_state = self.COMMAND
+        self.smtp_state = SmtpStream.State.COMMAND
         self.mailfrom = None
         self.rcpttos = []
         self.require_SMTPUTF8 = False
@@ -160,9 +162,9 @@ class SmtpStream(asynchat.async_chat):
     # Implementation of base class abstract method
     def collect_incoming_data(self, data):
         limit = None
-        if self.smtp_state == self.COMMAND:
+        if self.smtp_state == SmtpStream.State.COMMAND:
             limit = self.max_command_size_limit
-        elif self.smtp_state == self.DATA:
+        elif self.smtp_state == SmtpStream.State.DATA:
             limit = self.data_size_limit
         if limit and self.num_bytes > limit:
             return
@@ -178,7 +180,7 @@ class SmtpStream(asynchat.async_chat):
         line = self._emptystring.join(self.received_lines)
         print('Data:', repr(line), file=sys.stderr)
         self.received_lines = []
-        if self.smtp_state == self.COMMAND:
+        if self.smtp_state == SmtpStream.State.COMMAND:
             sz, self.num_bytes = self.num_bytes, 0
             if not line:
                 self.push('500 Error: bad syntax')
@@ -204,7 +206,7 @@ class SmtpStream(asynchat.async_chat):
             method(arg)
             return
         else:
-            if self.smtp_state != self.DATA:
+            if self.smtp_state != SmtpStream.State.DATA:
                 self.push('451 Internal confusion')
                 self.num_bytes = 0
                 return
@@ -461,7 +463,7 @@ class SmtpStream(asynchat.async_chat):
         if arg:
             self.push('501 Syntax: DATA')
             return
-        self.smtp_state = self.DATA
+        self.smtp_state = SmtpStream.State.DATA
         self.set_terminator(b'\r\n.\r\n')
         self.push('354 End data with <CR><LF>.<CR><LF>')
 
