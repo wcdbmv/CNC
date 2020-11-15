@@ -65,7 +65,7 @@ import collections
 from libemail.header_value_parser import get_addr_spec, get_angle_addr
 
 __all__ = [
-    "SMTPChannel", "SMTPServer",
+    "SmtpStream", "SMTPServer",
 ]
 
 program = sys.argv[0]
@@ -84,7 +84,7 @@ def usage(code, msg=''):
     sys.exit(code)
 
 
-class SMTPChannel(asynchat.async_chat):
+class SmtpStream(asynchat.async_chat):
     COMMAND = 0
     DATA = 1
 
@@ -471,8 +471,7 @@ class SMTPChannel(asynchat.async_chat):
 
 
 class SMTPServer(asyncore.dispatcher):
-    # SMTPChannel class to use for managing client connections
-    channel_class = SMTPChannel
+    stream_class = SmtpStream
 
     def __init__(self, localaddr, remoteaddr,
                  data_size_limit=DATA_SIZE_DEFAULT, map=None,
@@ -504,13 +503,13 @@ class SMTPServer(asyncore.dispatcher):
 
     def handle_accepted(self, conn, addr):
         print('Incoming connection from %s' % repr(addr), file=sys.stderr)
-        channel = self.channel_class(self,
-                                     conn,
-                                     addr,
-                                     self.data_size_limit,
-                                     self._map,
-                                     self.enable_SMTPUTF8,
-                                     self._decode_data)
+        stream = self.stream_class(self,
+                                   conn,
+                                   addr,
+                                   self.data_size_limit,
+                                   self._map,
+                                   self.enable_SMTPUTF8,
+                                   self._decode_data)
 
     # API for "doing something useful with the message"
     def process_message(self, peer, mailfrom, rcpttos, data, **kwargs):
@@ -555,7 +554,6 @@ class Options:
 
 
 def parseargs():
-    global sys.stderr
     try:
         opts, args = getopt.getopt(
             sys.argv[1:], 'nVhc:s:du',
