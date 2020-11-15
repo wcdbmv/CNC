@@ -29,10 +29,6 @@ Options:
     -u
         Enable the SMTPUTF8 extension and behave as an RFC 6531 smtp proxy.
 
-    --debug
-    -d
-        Turn on debugging prints.
-
     --help
     -h
         Print this message and exit.
@@ -63,7 +59,7 @@ import asyncore
 import asynchat
 import collections
 from enum import Enum
-from typing import Union, Any
+from typing import Union, Any, Optional, List
 from libemail.header_value_parser import get_addr_spec, get_angle_addr
 
 __all__ = [
@@ -74,15 +70,17 @@ program = sys.argv[0]
 __version__ = 'libsmtp v0.1'
 
 
-NEWLINE = '\n'
-COMMASPACE = ', '
 DATA_SIZE_DEFAULT = 33554432
 
 
+def print_to_stderr(*args, **kwargs):
+    print(*args, **kwargs, file=sys.stderr)
+
+
 def usage(code, msg=''):
-    print(__doc__ % globals(), file=sys.stderr)
+    print_to_stderr(__doc__ % globals())
     if msg:
-        print(msg, file=sys.stderr)
+        print_to_stderr(msg)
     sys.exit(code)
 
 
@@ -91,10 +89,10 @@ Char = Union[str, bytes, int]
 
 class Chars:
     def __init__(self, emptystring: Char, linesep: Char, dotsep: Char, newline: Char):
-        self.emptystring = emptystring
-        self.linesep = linesep
-        self.dotsep = dotsep
-        self.newline = newline
+        self.emptystring: Char = emptystring
+        self.linesep: Char = linesep
+        self.dotsep: Char = dotsep
+        self.newline: Char = newline
 
 
 str_chars = Chars('', '\r\n', '.', '\n')
@@ -117,7 +115,7 @@ class SmtpStream(asynchat.async_chat):
             return self.command_size_limit
 
     def __init__(self, server: 'SMTPServer', conn: socket.socket, data_size_limit: int = DATA_SIZE_DEFAULT,
-                 map_: Any = None, enable_smtp_utf8: bool = False, decode_data: bool = False):
+                 map_: Any = None, enable_smtp_utf8: bool = False, decode_data: bool = False) -> None:
         if enable_smtp_utf8 and decode_data:
             raise ValueError("decode_data and enable_smtp_utf8 cannot be set to True at the same time")
 
@@ -145,106 +143,101 @@ class SmtpStream(asynchat.async_chat):
             if err.args[0] != errno.ENOTCONN:
                 raise
             return
-        print(f'Peer: {repr(self.peer)}', file=sys.stderr)
+        print_to_stderr(f'Peer: {repr(self.peer)}')
         self.push(f'220 {self.fqdn} {__version__}')
 
-    def __set_post_data_state(self):
-        """Сбросить состояние переменных в их состояние после получения данных"""
+    def __set_post_data_state(self) -> None:
+        """Сбросить состояние переменных в их состояние после получения данных."""
         self.smtp_state: SmtpStream.State.COMMAND = SmtpStream.State.COMMAND
-        self.mail_from = None
-        self.rcpt_tos = []
+        self.mail_from: Optional[str] = None
+        self.rcpt_tos: List[str] = []
         self.require_smtp_utf8: bool = False
         self.num_bytes: int = 0
         self.set_terminator(b'\r\n')
 
-    def __set_reset_state(self):
-        """Сбросить состояние всех переменных за исключением приветствия"""
+    def __set_reset_state(self) -> None:
+        """Сбросить состояние всех переменных за исключением приветствия."""
         self.__set_post_data_state()
-        self.received_data = ''
-        self.received_lines = []
+        self.received_data: str = ''
+        self.received_lines: List[str] = []
 
-    # Overrides base class for convenience.
-    def push(self, msg):
-        asynchat.async_chat.push(self, bytes(
-            msg + '\r\n', 'utf-8' if self.require_smtp_utf8 else 'ascii'))
+    def push(self, msg: str) -> None:
+        """Переопределяет метод базового класса для удобства."""
+        super().push(bytes(msg + '\r\n', 'utf-8' if self.require_smtp_utf8 else 'ascii'))
 
-    # Implementation of base class abstract method
-    def collect_incoming_data(self, data):
-        limit = None
+    def collect_incoming_data(self, data: bytes) -> None:
+        """Реализация абстрактного метода базового класса."""
+        limit: Optional[int] = None
         if self.smtp_state == SmtpStream.State.COMMAND:
             limit = self.max_command_size_limit
         elif self.smtp_state == SmtpStream.State.DATA:
             limit = self.data_size_limit
-        if limit and self.num_bytes > limit:
-            return
-        elif limit:
-            self.num_bytes += len(data)
-        if self.decode_data:
-            self.received_lines.append(str(data, 'utf-8'))
-        else:
-            self.received_lines.append(data)
 
-    # Implementation of base class abstract method
-    def found_terminator(self):
-        line = self.__chars.emptystring.join(self.received_lines)
-        print('Data:', repr(line), file=sys.stderr)
-        self.received_lines = []
-        if self.smtp_state == SmtpStream.State.COMMAND:
-            sz, self.num_bytes = self.num_bytes, 0
-            if not line:
-                self.push('500 Error: bad syntax')
+        if limit:
+            if self.num_bytes > limit:
                 return
-            if not self.decode_data:
-                line = str(line, 'utf-8')
-            i = line.find(' ')
-            if i < 0:
-                command = line.upper()
-                arg = None
-            else:
-                command = line[:i].upper()
-                arg = line[i+1:].strip()
-            max_sz = (self.command_size_limits[command]
-                        if self.extended_smtp else self.command_size_limit)
-            if sz > max_sz:
-                self.push('500 Error: line too long')
-                return
-            method = getattr(self, 'smtp_' + command, None)
-            if not method:
-                self.push('500 Error: command "%s" not recognized' % command)
-                return
-            method(arg)
-            return
+            self.num_bytes += len(data)
+
+        self.received_lines.append(str(data, 'utf-8') if self.decode_data else data)
+
+    def __found_terminator_in_command_state(self, line: Char) -> None:
+        sz, self.num_bytes = self.num_bytes, 0
+        if not line:
+            return self.push('500 Error: invalid syntax')
+        if not self.decode_data:
+            line = str(line, 'utf-8')
+
+        i_space = line.find(' ')
+        if i_space < 0:
+            command = line.upper()
+            arg = None
         else:
-            if self.smtp_state != SmtpStream.State.DATA:
-                self.push('451 Internal confusion')
-                self.num_bytes = 0
-                return
-            if self.data_size_limit and self.num_bytes > self.data_size_limit:
-                self.push('552 Error: Too much mail data')
-                self.num_bytes = 0
-                return
-            # Remove extraneous carriage returns and de-transparency according
-            # to RFC 5321, Section 4.5.2.
-            data = []
-            for text in line.split(self.__chars.linesep):
-                if text and text[0] == self.__chars.dotsep:
-                    data.append(text[1:])
-                else:
-                    data.append(text)
-            self.received_data = self.__chars.newline.join(data)
-            args = (self.peer, self.mail_from, self.rcpt_tos, self.received_data)
-            kwargs = {}
-            if not self.decode_data:
-                kwargs = {
-                    'mail_options': self.mail_options,
-                    'rcpt_options': self.rcpt_options,
-                }
-            status = self.smtp_server.process_message(*args, **kwargs)
-            self.__set_post_data_state()
-            if not status:
-                self.push('250 OK')
-            else:
-                self.push(status)
+            command = line[:i_space].upper()
+            arg = line[i_space + 1:].strip()
+
+        max_sz = self.command_size_limits[command] if self.extended_smtp else self.command_size_limit
+        if sz > max_sz:
+            return self.push('500 Error: reach command size limit')
+        method = getattr(self, 'smtp_' + command, None)
+        if not method:
+            return self.push(f'500 Error: unsupported command `{command}`')
+        method(arg)
+
+    def __found_terminator_in_data_state(self, line: Char) -> None:
+        if self.data_size_limit and self.num_bytes > self.data_size_limit:
+            self.push('552 Error: Too much mail data')
+            self.num_bytes = 0
+            return
+
+        # Удаление лишних символов (RFC 5321, секция 4.5.2)
+        data = []
+        for text in line.split(self.__chars.linesep):
+            data.append(text[1:] if text and text[0] == self.__chars.dotsep else text)
+        self.received_data = self.__chars.newline.join(data)
+        args = (self.peer, self.mail_from, self.rcpt_tos, self.received_data)
+        kwargs = {}
+        if not self.decode_data:
+            kwargs = {
+                'mail_options': self.mail_options,
+                'rcpt_options': self.rcpt_options,
+            }
+        status = self.smtp_server.process_message(*args, **kwargs)
+        self.__set_post_data_state()
+        self.push(status if status else '250 OK')
+
+    def found_terminator(self) -> None:
+        """Реализация абстрактного метода базового класса."""
+        line: Char = self.__chars.emptystring.join(self.received_lines)
+        print_to_stderr(f'Data: {repr(line)}')
+        self.received_lines.clear()
+
+        if self.smtp_state == SmtpStream.State.COMMAND:
+            self.__found_terminator_in_command_state(line)
+        elif self.smtp_state == SmtpStream.State.DATA:
+            self.__found_terminator_in_data_state(line)
+        else:
+            self.push('451 Internal confusion')
+            self.num_bytes = 0
 
     # SMTP and ESMTP commands
     def smtp_HELO(self, arg):
@@ -370,7 +363,7 @@ class SmtpStream(asynchat.async_chat):
         if not self.seen_greeting:
             self.push('503 Error: send HELO first')
             return
-        print('===> MAIL', arg, file=sys.stderr)
+        print_to_stderr('===> MAIL', arg)
         syntaxerr = '501 Syntax: MAIL FROM: <address>'
         if self.extended_smtp:
             syntaxerr += ' [SP <mail-parameters>]'
@@ -417,14 +410,14 @@ class SmtpStream(asynchat.async_chat):
             self.push('555 MAIL FROM parameters not recognized or not implemented')
             return
         self.mail_from = address
-        print('sender:', self.mail_from, file=sys.stderr)
+        print_to_stderr('sender:', self.mail_from)
         self.push('250 OK')
 
     def smtp_RCPT(self, arg):
         if not self.seen_greeting:
-            self.push('503 Error: send HELO first');
+            self.push('503 Error: send HELO first')
             return
-        print('===> RCPT', arg, file=sys.stderr)
+        print_to_stderr('===> RCPT', arg)
         if not self.mail_from:
             self.push('503 Error: need MAIL command')
             return
@@ -452,7 +445,7 @@ class SmtpStream(asynchat.async_chat):
             self.push('555 RCPT TO parameters not recognized or not implemented')
             return
         self.rcpt_tos.append(address)
-        print('recips:', self.rcpt_tos, file=sys.stderr)
+        print_to_stderr('recips:', self.rcpt_tos)
         self.push('250 OK')
 
     def smtp_RSET(self, arg):
@@ -464,7 +457,7 @@ class SmtpStream(asynchat.async_chat):
 
     def smtp_DATA(self, arg):
         if not self.seen_greeting:
-            self.push('503 Error: send HELO first');
+            self.push('503 Error: send HELO first')
             return
         if not self.rcpt_tos:
             self.push('503 Error: need RCPT command')
@@ -508,12 +501,12 @@ class SMTPServer(asyncore.dispatcher):
             self.close()
             raise
         else:
-            print('%s started at %s\n\tLocal addr: %s\n\tRemote addr:%s' % (
+            print_to_stderr('%s started at %s\n\tLocal addr: %s\n\tRemote addr:%s' % (
                 self.__class__.__name__, time.ctime(time.time()),
-                localaddr, remoteaddr), file=sys.stderr)
+                localaddr, remoteaddr))
 
     def handle_accepted(self, conn, addr):
-        print('Incoming connection from %s' % repr(addr), file=sys.stderr)
+        print_to_stderr('Incoming connection from %s' % repr(addr))
         self.stream_class(self,
                           conn,
                           self.data_size_limit,
@@ -583,8 +576,6 @@ def parseargs():
             options.setuid = False
         elif opt in ('-c', '--class'):
             options.classname = arg
-        elif opt in ('-d', '--debug'):
-            sys.stderr = sys.stderr
         elif opt in ('-u', '--smtputf8'):
             options.enable_SMTPUTF8 = True
         elif opt in ('-s', '--size'):
@@ -592,7 +583,7 @@ def parseargs():
                 int_size = int(arg)
                 options.size_limit = int_size
             except:
-                print('Invalid size: ' + arg, file=sys.stderr)
+                print_to_stderr('Invalid size: ' + arg)
                 sys.exit(1)
 
     # parse the rest of the arguments
@@ -606,7 +597,7 @@ def parseargs():
         localspec = args[0]
         remotespec = args[1]
     else:
-        usage(1, 'Invalid arguments: %s' % COMMASPACE.join(args))
+        usage(1, 'Invalid arguments: %s' % ', '.join(args))
 
     # split into host/port pairs
     i = localspec.find(':')
@@ -646,13 +637,13 @@ if __name__ == '__main__':
         try:
             import pwd
         except ImportError:
-            print('Cannot import module "pwd"; try running with -n option.', file=sys.stderr)
+            print_to_stderr('Cannot import module "pwd"; try running with -n option.')
             sys.exit(1)
         nobody = pwd.getpwnam('nobody')[2]
         try:
             os.setuid(nobody)
         except PermissionError:
-            print('Cannot setuid "nobody"; try running with -n option.', file=sys.stderr)
+            print_to_stderr('Cannot setuid "nobody"; try running with -n option.')
             sys.exit(1)
     try:
         asyncore.loop()
