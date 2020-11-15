@@ -63,6 +63,7 @@ import asyncore
 import asynchat
 import collections
 from enum import Enum
+from typing import Union, Any
 from libemail.header_value_parser import get_addr_spec, get_angle_addr
 
 __all__ = [
@@ -70,7 +71,7 @@ __all__ = [
 ]
 
 program = sys.argv[0]
-__version__ = 'Python SMTP proxy version 0.3'
+__version__ = 'libsmtp v0.1'
 
 
 NEWLINE = '\n'
@@ -83,6 +84,21 @@ def usage(code, msg=''):
     if msg:
         print(msg, file=sys.stderr)
     sys.exit(code)
+
+
+Char = Union[str, bytes, int]
+
+
+class Chars:
+    def __init__(self, emptystring: Char, linesep: Char, dotsep: Char, newline: Char):
+        self.emptystring = emptystring
+        self.linesep = linesep
+        self.dotsep = dotsep
+        self.newline = newline
+
+
+str_chars = Chars('', '\r\n', '.', '\n')
+bytes_chars = Chars(b'', b'\r\n', ord(b'.'), b'\n')
 
 
 class SmtpStream(asynchat.async_chat):
@@ -100,64 +116,57 @@ class SmtpStream(asynchat.async_chat):
         except ValueError:
             return self.command_size_limit
 
-    def __init__(self, server, conn, addr, data_size_limit=DATA_SIZE_DEFAULT,
-                 map=None, enable_SMTPUTF8=False, decode_data=False):
-        asynchat.async_chat.__init__(self, conn, map=map)
-        self.smtp_server = server
-        self.conn = conn
-        self.addr = addr
-        self.data_size_limit = data_size_limit
-        self.enable_SMTPUTF8 = enable_SMTPUTF8
-        self._decode_data = decode_data
-        if enable_SMTPUTF8 and decode_data:
-            raise ValueError("decode_data and enable_SMTPUTF8 cannot"
-                             " be set to True at the same time")
-        if decode_data:
-            self._emptystring = ''
-            self._linesep = '\r\n'
-            self._dotsep = '.'
-            self._newline = NEWLINE
-        else:
-            self._emptystring = b''
-            self._linesep = b'\r\n'
-            self._dotsep = ord(b'.')
-            self._newline = b'\n'
-        self._set_rset_state()
-        self.seen_greeting = ''
-        self.extended_smtp = False
+    def __init__(self, server: 'SMTPServer', conn: socket.socket, data_size_limit: int = DATA_SIZE_DEFAULT,
+                 map_: Any = None, enable_smtp_utf8: bool = False, decode_data: bool = False):
+        if enable_smtp_utf8 and decode_data:
+            raise ValueError("decode_data and enable_smtp_utf8 cannot be set to True at the same time")
+
+        super().__init__(conn, map=map_)
+
+        self.smtp_server: SMTPServer = server
+        self.conn: socket.socket = conn
+        self.data_size_limit: int = data_size_limit
+        self.enable_smtp_utf8: bool = enable_smtp_utf8
+        self.decode_data: bool = decode_data
+
+        self.__chars: Chars = str_chars if decode_data else bytes_chars
+        self.__set_reset_state()
+
+        self.seen_greeting: str = ''
+        self.extended_smtp: bool = False
         self.command_size_limits.clear()
-        self.fqdn = socket.getfqdn()
+        self.fqdn: str = socket.getfqdn()
+
         try:
-            self.peer = conn.getpeername()
+            self.peer: Any = conn.getpeername()
         except OSError as err:
-            # a race condition  may occur if the other end is closing
-            # before we can get the peername
+            # Может возникнуть состояние гонки, если другой конец закрывается до того, как мы сможем получить имя узла
             self.close()
             if err.args[0] != errno.ENOTCONN:
                 raise
             return
-        print('Peer:', repr(self.peer), file=sys.stderr)
-        self.push('220 %s %s' % (self.fqdn, __version__))
+        print(f'Peer: {repr(self.peer)}', file=sys.stderr)
+        self.push(f'220 {self.fqdn} {__version__}')
 
-    def _set_post_data_state(self):
-        """Reset state variables to their post-DATA state."""
-        self.smtp_state = SmtpStream.State.COMMAND
-        self.mailfrom = None
-        self.rcpttos = []
-        self.require_SMTPUTF8 = False
-        self.num_bytes = 0
+    def __set_post_data_state(self):
+        """Сбросить состояние переменных в их состояние после получения данных"""
+        self.smtp_state: SmtpStream.State.COMMAND = SmtpStream.State.COMMAND
+        self.mail_from = None
+        self.rcpt_tos = []
+        self.require_smtp_utf8: bool = False
+        self.num_bytes: int = 0
         self.set_terminator(b'\r\n')
 
-    def _set_rset_state(self):
-        """Reset all state variables except the greeting."""
-        self._set_post_data_state()
+    def __set_reset_state(self):
+        """Сбросить состояние всех переменных за исключением приветствия"""
+        self.__set_post_data_state()
         self.received_data = ''
         self.received_lines = []
 
     # Overrides base class for convenience.
     def push(self, msg):
         asynchat.async_chat.push(self, bytes(
-            msg + '\r\n', 'utf-8' if self.require_SMTPUTF8 else 'ascii'))
+            msg + '\r\n', 'utf-8' if self.require_smtp_utf8 else 'ascii'))
 
     # Implementation of base class abstract method
     def collect_incoming_data(self, data):
@@ -170,14 +179,14 @@ class SmtpStream(asynchat.async_chat):
             return
         elif limit:
             self.num_bytes += len(data)
-        if self._decode_data:
+        if self.decode_data:
             self.received_lines.append(str(data, 'utf-8'))
         else:
             self.received_lines.append(data)
 
     # Implementation of base class abstract method
     def found_terminator(self):
-        line = self._emptystring.join(self.received_lines)
+        line = self.__chars.emptystring.join(self.received_lines)
         print('Data:', repr(line), file=sys.stderr)
         self.received_lines = []
         if self.smtp_state == SmtpStream.State.COMMAND:
@@ -185,7 +194,7 @@ class SmtpStream(asynchat.async_chat):
             if not line:
                 self.push('500 Error: bad syntax')
                 return
-            if not self._decode_data:
+            if not self.decode_data:
                 line = str(line, 'utf-8')
             i = line.find(' ')
             if i < 0:
@@ -217,21 +226,21 @@ class SmtpStream(asynchat.async_chat):
             # Remove extraneous carriage returns and de-transparency according
             # to RFC 5321, Section 4.5.2.
             data = []
-            for text in line.split(self._linesep):
-                if text and text[0] == self._dotsep:
+            for text in line.split(self.__chars.linesep):
+                if text and text[0] == self.__chars.dotsep:
                     data.append(text[1:])
                 else:
                     data.append(text)
-            self.received_data = self._newline.join(data)
-            args = (self.peer, self.mailfrom, self.rcpttos, self.received_data)
+            self.received_data = self.__chars.newline.join(data)
+            args = (self.peer, self.mail_from, self.rcpt_tos, self.received_data)
             kwargs = {}
-            if not self._decode_data:
+            if not self.decode_data:
                 kwargs = {
                     'mail_options': self.mail_options,
                     'rcpt_options': self.rcpt_options,
                 }
             status = self.smtp_server.process_message(*args, **kwargs)
-            self._set_post_data_state()
+            self.__set_post_data_state()
             if not status:
                 self.push('250 OK')
             else:
@@ -246,7 +255,7 @@ class SmtpStream(asynchat.async_chat):
         if self.seen_greeting:
             self.push('503 Duplicate HELO/EHLO')
             return
-        self._set_rset_state()
+        self.__set_reset_state()
         self.seen_greeting = arg
         self.push('250 %s' % self.fqdn)
 
@@ -258,16 +267,16 @@ class SmtpStream(asynchat.async_chat):
         if self.seen_greeting:
             self.push('503 Duplicate HELO/EHLO')
             return
-        self._set_rset_state()
+        self.__set_reset_state()
         self.seen_greeting = arg
         self.extended_smtp = True
         self.push('250-%s' % self.fqdn)
         if self.data_size_limit:
             self.push('250-SIZE %s' % self.data_size_limit)
             self.command_size_limits['MAIL'] += 26
-        if not self._decode_data:
+        if not self.decode_data:
             self.push('250-8BITMIME')
-        if self.enable_SMTPUTF8:
+        if self.enable_smtp_utf8:
             self.push('250-SMTPUTF8')
             self.command_size_limits['MAIL'] += 10
         self.push('250 HELP')
@@ -376,7 +385,7 @@ class SmtpStream(asynchat.async_chat):
         if not self.extended_smtp and params:
             self.push(syntaxerr)
             return
-        if self.mailfrom:
+        if self.mail_from:
             self.push('503 Error: nested MAIL command')
             return
         self.mail_options = params.upper().split()
@@ -384,16 +393,16 @@ class SmtpStream(asynchat.async_chat):
         if params is None:
             self.push(syntaxerr)
             return
-        if not self._decode_data:
+        if not self.decode_data:
             body = params.pop('BODY', '7BIT')
             if body not in ['7BIT', '8BITMIME']:
                 self.push('501 Error: BODY can only be one of 7BIT, 8BITMIME')
                 return
-        if self.enable_SMTPUTF8:
-            smtputf8 = params.pop('SMTPUTF8', False)
-            if smtputf8 is True:
-                self.require_SMTPUTF8 = True
-            elif smtputf8 is not False:
+        if self.enable_smtp_utf8:
+            smtp_utf8 = params.pop('SMTPUTF8', False)
+            if smtp_utf8 is True:
+                self.require_smtp_utf8 = True
+            elif smtp_utf8 is not False:
                 self.push('501 Error: SMTPUTF8 takes no arguments')
                 return
         size = params.pop('SIZE', None)
@@ -407,8 +416,8 @@ class SmtpStream(asynchat.async_chat):
         if len(params.keys()) > 0:
             self.push('555 MAIL FROM parameters not recognized or not implemented')
             return
-        self.mailfrom = address
-        print('sender:', self.mailfrom, file=sys.stderr)
+        self.mail_from = address
+        print('sender:', self.mail_from, file=sys.stderr)
         self.push('250 OK')
 
     def smtp_RCPT(self, arg):
@@ -416,7 +425,7 @@ class SmtpStream(asynchat.async_chat):
             self.push('503 Error: send HELO first');
             return
         print('===> RCPT', arg, file=sys.stderr)
-        if not self.mailfrom:
+        if not self.mail_from:
             self.push('503 Error: need MAIL command')
             return
         syntaxerr = '501 Syntax: RCPT TO: <address>'
@@ -442,22 +451,22 @@ class SmtpStream(asynchat.async_chat):
         if len(params.keys()) > 0:
             self.push('555 RCPT TO parameters not recognized or not implemented')
             return
-        self.rcpttos.append(address)
-        print('recips:', self.rcpttos, file=sys.stderr)
+        self.rcpt_tos.append(address)
+        print('recips:', self.rcpt_tos, file=sys.stderr)
         self.push('250 OK')
 
     def smtp_RSET(self, arg):
         if arg:
             self.push('501 Syntax: RSET')
             return
-        self._set_rset_state()
+        self.__set_reset_state()
         self.push('250 OK')
 
     def smtp_DATA(self, arg):
         if not self.seen_greeting:
             self.push('503 Error: send HELO first');
             return
-        if not self.rcpttos:
+        if not self.rcpt_tos:
             self.push('503 Error: need RCPT command')
             return
         if arg:
@@ -505,13 +514,12 @@ class SMTPServer(asyncore.dispatcher):
 
     def handle_accepted(self, conn, addr):
         print('Incoming connection from %s' % repr(addr), file=sys.stderr)
-        stream = self.stream_class(self,
-                                   conn,
-                                   addr,
-                                   self.data_size_limit,
-                                   self._map,
-                                   self.enable_SMTPUTF8,
-                                   self._decode_data)
+        self.stream_class(self,
+                          conn,
+                          self.data_size_limit,
+                          self._map,
+                          self.enable_SMTPUTF8,
+                          self._decode_data)
 
     # API for "doing something useful with the message"
     def process_message(self, peer, mailfrom, rcpttos, data, **kwargs):
