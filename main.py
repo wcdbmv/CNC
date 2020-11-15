@@ -72,12 +72,6 @@ program = sys.argv[0]
 __version__ = 'Python SMTP proxy version 0.3'
 
 
-class Devnull:
-    def write(self, msg): pass
-    def flush(self): pass
-
-
-DEBUGSTREAM = Devnull()
 NEWLINE = '\n'
 COMMASPACE = ', '
 DATA_SIZE_DEFAULT = 33554432
@@ -140,7 +134,7 @@ class SMTPChannel(asynchat.async_chat):
             if err.args[0] != errno.ENOTCONN:
                 raise
             return
-        print('Peer:', repr(self.peer), file=DEBUGSTREAM)
+        print('Peer:', repr(self.peer), file=sys.stderr)
         self.push('220 %s %s' % (self.fqdn, __version__))
 
     def _set_post_data_state(self):
@@ -182,7 +176,7 @@ class SMTPChannel(asynchat.async_chat):
     # Implementation of base class abstract method
     def found_terminator(self):
         line = self._emptystring.join(self.received_lines)
-        print('Data:', repr(line), file=DEBUGSTREAM)
+        print('Data:', repr(line), file=sys.stderr)
         self.received_lines = []
         if self.smtp_state == self.COMMAND:
             sz, self.num_bytes = self.num_bytes, 0
@@ -365,7 +359,7 @@ class SMTPChannel(asynchat.async_chat):
         if not self.seen_greeting:
             self.push('503 Error: send HELO first')
             return
-        print('===> MAIL', arg, file=DEBUGSTREAM)
+        print('===> MAIL', arg, file=sys.stderr)
         syntaxerr = '501 Syntax: MAIL FROM: <address>'
         if self.extended_smtp:
             syntaxerr += ' [SP <mail-parameters>]'
@@ -412,14 +406,14 @@ class SMTPChannel(asynchat.async_chat):
             self.push('555 MAIL FROM parameters not recognized or not implemented')
             return
         self.mailfrom = address
-        print('sender:', self.mailfrom, file=DEBUGSTREAM)
+        print('sender:', self.mailfrom, file=sys.stderr)
         self.push('250 OK')
 
     def smtp_RCPT(self, arg):
         if not self.seen_greeting:
             self.push('503 Error: send HELO first');
             return
-        print('===> RCPT', arg, file=DEBUGSTREAM)
+        print('===> RCPT', arg, file=sys.stderr)
         if not self.mailfrom:
             self.push('503 Error: need MAIL command')
             return
@@ -447,7 +441,7 @@ class SMTPChannel(asynchat.async_chat):
             self.push('555 RCPT TO parameters not recognized or not implemented')
             return
         self.rcpttos.append(address)
-        print('recips:', self.rcpttos, file=DEBUGSTREAM)
+        print('recips:', self.rcpttos, file=sys.stderr)
         self.push('250 OK')
 
     def smtp_RSET(self, arg):
@@ -506,10 +500,10 @@ class SMTPServer(asyncore.dispatcher):
         else:
             print('%s started at %s\n\tLocal addr: %s\n\tRemote addr:%s' % (
                 self.__class__.__name__, time.ctime(time.time()),
-                localaddr, remoteaddr), file=DEBUGSTREAM)
+                localaddr, remoteaddr), file=sys.stderr)
 
     def handle_accepted(self, conn, addr):
-        print('Incoming connection from %s' % repr(addr), file=DEBUGSTREAM)
+        print('Incoming connection from %s' % repr(addr), file=sys.stderr)
         channel = self.channel_class(self,
                                      conn,
                                      addr,
@@ -561,7 +555,7 @@ class Options:
 
 
 def parseargs():
-    global DEBUGSTREAM
+    global sys.stderr
     try:
         opts, args = getopt.getopt(
             sys.argv[1:], 'nVhc:s:du',
@@ -582,7 +576,7 @@ def parseargs():
         elif opt in ('-c', '--class'):
             options.classname = arg
         elif opt in ('-d', '--debug'):
-            DEBUGSTREAM = sys.stderr
+            sys.stderr = sys.stderr
         elif opt in ('-u', '--smtputf8'):
             options.enable_SMTPUTF8 = True
         elif opt in ('-s', '--size'):
