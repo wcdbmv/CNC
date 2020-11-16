@@ -59,7 +59,7 @@ import asyncore
 import asynchat
 import collections
 from enum import Enum
-from typing import Union, Any, Optional, List
+from typing import Union, Any, Optional, List, Tuple
 from libemail.header_value_parser import get_addr_spec, get_angle_addr
 
 __all__ = [
@@ -183,7 +183,7 @@ class SmtpStream(asynchat.async_chat):
     def __found_terminator_in_command_state(self, line: Char) -> None:
         sz, self.num_bytes = self.num_bytes, 0
         if not line:
-            return self.push('500 Error: invalid syntax')
+            return self.push('500 Syntax error')
         if not self.decode_data:
             line = str(line, 'utf-8')
 
@@ -197,15 +197,15 @@ class SmtpStream(asynchat.async_chat):
 
         max_sz = self.command_size_limits[command] if self.extended_smtp else self.command_size_limit
         if sz > max_sz:
-            return self.push('500 Error: reach command size limit')
+            return self.push('500 Syntax error: command line too long')
         method = getattr(self, 'smtp_' + command, None)
         if not method:
-            return self.push(f'500 Error: unsupported command `{command}`')
+            return self.push(f'500 Command unrecognized: `{command}`')
         method(arg)
 
     def __found_terminator_in_data_state(self, line: Char) -> None:
         if self.data_size_limit and self.num_bytes > self.data_size_limit:
-            self.push('552 Error: Too much mail data')
+            self.push('552 Requested mail action aborted: exceeded storage allocation')
             self.num_bytes = 0
             return
 
@@ -236,36 +236,73 @@ class SmtpStream(asynchat.async_chat):
         elif self.smtp_state == SmtpStream.State.DATA:
             self.__found_terminator_in_data_state(line)
         else:
-            self.push('451 Internal confusion')
+            self.push('451 Requested action aborted: error in processing')
             self.num_bytes = 0
 
-    # SMTP and ESMTP commands
-    def smtp_HELO(self, arg):
+    # Синтаксис комманд (https://tools.ietf.org/html/rfc5321#section-4.5.1)
+    @staticmethod
+    def syntax_EHLO() -> str:
+        return 'EHLO <hostname>'
+
+    @staticmethod
+    def syntax_HELO() -> str:
+        return 'HELO <hostname>'
+
+    def __syntax_extended(self) -> str:
+        return ' [SP <mail-parameters>]' * self.extended_smtp
+
+    def syntax_MAIL(self) -> str:
+        return 'MAIL FROM: <address>' + self.__syntax_extended()
+
+    def syntax_RCPT(self) -> str:
+        return 'RCPT TO: <address>' + self.__syntax_extended()
+
+    @staticmethod
+    def syntax_DATA() -> str:
+        return 'DATA'
+
+    @staticmethod
+    def syntax_RSET() -> str:
+        return 'RSET'
+
+    @staticmethod
+    def syntax_NOOP() -> str:
+        return 'NOOP'
+
+    @staticmethod
+    def syntax_QUIT() -> str:
+        return 'QUIT'
+
+    @staticmethod
+    def syntax_VRFY() -> str:
+        return 'VRFY <address>'
+
+    def supported_commands(self) -> str:
+        prefix_str = 'syntax_'
+        prefix_len = len(prefix_str)
+        return ' '.join(method[prefix_len:] for method in dir(self) if method.startswith(prefix_str))
+
+    # комманды SMTP и ESMTP
+    def smtp_HELO(self, arg: Char) -> None:
         if not arg:
-            self.push('501 Syntax: HELO hostname')
-            return
-        # See issue #21783 for a discussion of this behavior.
+            return self.push(f'501 Syntax: {SmtpStream.syntax_HELO()}')
         if self.seen_greeting:
-            self.push('503 Duplicate HELO/EHLO')
-            return
+            return self.push('503 Bad sequence of commands: duplicate HELO/EHLO')
         self.__set_reset_state()
         self.seen_greeting = arg
-        self.push('250 %s' % self.fqdn)
+        self.push(f'250 {self.fqdn}')
 
-    def smtp_EHLO(self, arg):
+    def smtp_EHLO(self, arg: Char) -> None:
         if not arg:
-            self.push('501 Syntax: EHLO hostname')
-            return
-        # See issue #21783 for a discussion of this behavior.
+            return self.push(f'501 Syntax: {SmtpStream.syntax_EHLO()}')
         if self.seen_greeting:
-            self.push('503 Duplicate HELO/EHLO')
-            return
+            return self.push('503 Bad sequence of commands: duplicate HELO/EHLO')
         self.__set_reset_state()
         self.seen_greeting = arg
         self.extended_smtp = True
-        self.push('250-%s' % self.fqdn)
+        self.push(f'250-{self.fqdn}')
         if self.data_size_limit:
-            self.push('250-SIZE %s' % self.data_size_limit)
+            self.push(f'250-SIZE {self.data_size_limit}')
             self.command_size_limits['MAIL'] += 26
         if not self.decode_data:
             self.push('250-8BITMIME')
@@ -274,24 +311,20 @@ class SmtpStream(asynchat.async_chat):
             self.command_size_limits['MAIL'] += 10
         self.push('250 HELP')
 
-    def smtp_NOOP(self, arg):
-        if arg:
-            self.push('501 Syntax: NOOP')
-        else:
-            self.push('250 OK')
+    def smtp_NOOP(self, arg: Char) -> None:
+        self.push(f'501 Syntax: {SmtpStream.syntax_NOOP()}' if arg else '250 OK')
 
-    def smtp_QUIT(self, arg):
-        # args is ignored
+    def smtp_QUIT(self, unused_arg: Char) -> None:
         self.push('221 Bye')
         self.close_when_done()
 
-    def _strip_command_keyword(self, keyword, arg):
-        keylen = len(keyword)
-        if arg[:keylen].upper() == keyword:
-            return arg[keylen:].strip()
-        return ''
+    @staticmethod
+    def __strip_command_keyword(keyword: Char, arg: Char) -> Char:
+        key_len = len(keyword)
+        return arg[key_len:].strip() if arg[:key_len].upper() == keyword else ''
 
-    def _getaddr(self, arg):
+    @staticmethod
+    def __get_addr(arg: Char) -> Tuple[Char, Char]:
         if not arg:
             return '', ''
         if arg.lstrip().startswith('<'):
@@ -302,9 +335,9 @@ class SmtpStream(asynchat.async_chat):
             return address, rest
         return address.addr_spec, rest
 
-    def _getparams(self, params):
-        # Return params as dictionary. Return None if not all parameters
-        # appear to be syntactically valid according to RFC 1869.
+    @staticmethod
+    def __get_params(params) -> Optional[dict]:
+        # Вернуть параметры в виде словаря, если все являются синтаксически допустимыми в соответствии с RFC 1869
         result = {}
         for param in params:
             param, eq, value = param.partition('=')
@@ -313,165 +346,106 @@ class SmtpStream(asynchat.async_chat):
             result[param] = value if eq else True
         return result
 
-    def smtp_HELP(self, arg):
+    def smtp_HELP(self, arg: Char) -> None:
         if arg:
-            extended = ' [SP <mail-parameters>]'
-            lc_arg = arg.upper()
-            if lc_arg == 'EHLO':
-                self.push('250 Syntax: EHLO hostname')
-            elif lc_arg == 'HELO':
-                self.push('250 Syntax: HELO hostname')
-            elif lc_arg == 'MAIL':
-                msg = '250 Syntax: MAIL FROM: <address>'
-                if self.extended_smtp:
-                    msg += extended
-                self.push(msg)
-            elif lc_arg == 'RCPT':
-                msg = '250 Syntax: RCPT TO: <address>'
-                if self.extended_smtp:
-                    msg += extended
-                self.push(msg)
-            elif lc_arg == 'DATA':
-                self.push('250 Syntax: DATA')
-            elif lc_arg == 'RSET':
-                self.push('250 Syntax: RSET')
-            elif lc_arg == 'NOOP':
-                self.push('250 Syntax: NOOP')
-            elif lc_arg == 'QUIT':
-                self.push('250 Syntax: QUIT')
-            elif lc_arg == 'VRFY':
-                self.push('250 Syntax: VRFY <address>')
-            else:
-                self.push('501 Supported commands: EHLO HELO MAIL RCPT '
-                          'DATA RSET NOOP QUIT VRFY')
-        else:
-            self.push('250 Supported commands: EHLO HELO MAIL RCPT DATA '
-                      'RSET NOOP QUIT VRFY')
+            method = getattr(self, f'syntax_{arg.upper()}', None)
+            if method:
+                return self.push(f'250 Syntax: {method()}')
+        self.push(f'{501 if arg else 250} Supported commands: {self.supported_commands()}')
 
-    def smtp_VRFY(self, arg):
+    def smtp_VRFY(self, arg: Char) -> None:
         if arg:
-            address, params = self._getaddr(arg)
+            address, params = self.__get_addr(arg)
             if address:
-                self.push('252 Cannot VRFY user, but will accept message '
-                          'and attempt delivery')
+                self.push('252 Cannot VRFY user, but will accept message and attempt delivery')
             else:
-                self.push('502 Could not VRFY %s' % arg)
+                self.push(f'502 Could not VRFY {arg}')
         else:
-            self.push('501 Syntax: VRFY <address>')
+            self.push(f'501 Syntax: {SmtpStream.syntax_VRFY()}')
 
-    def smtp_MAIL(self, arg):
+    def smtp_MAIL(self, arg: Char) -> None:
         if not self.seen_greeting:
-            self.push('503 Error: send HELO first')
-            return
+            return self.push('503 Error: send HELO first')
         print_to_stderr('===> MAIL', arg)
-        syntaxerr = '501 Syntax: MAIL FROM: <address>'
-        if self.extended_smtp:
-            syntaxerr += ' [SP <mail-parameters>]'
+        syntaxerr = f'501 Syntax: {self.syntax_MAIL()}'
         if arg is None:
-            self.push(syntaxerr)
-            return
-        arg = self._strip_command_keyword('FROM:', arg)
-        address, params = self._getaddr(arg)
+            return self.push(syntaxerr)
+        arg = self.__strip_command_keyword('FROM:', arg)
+        address, params = self.__get_addr(arg)
         if not address:
-            self.push(syntaxerr)
-            return
+            return self.push(syntaxerr)
         if not self.extended_smtp and params:
-            self.push(syntaxerr)
-            return
+            return self.push(syntaxerr)
         if self.mail_from:
-            self.push('503 Error: nested MAIL command')
-            return
+            return self.push('503 Error: nested MAIL command')
         self.mail_options = params.upper().split()
-        params = self._getparams(self.mail_options)
+        params = self.__get_params(self.mail_options)
         if params is None:
-            self.push(syntaxerr)
-            return
+            return self.push(syntaxerr)
         if not self.decode_data:
             body = params.pop('BODY', '7BIT')
             if body not in ['7BIT', '8BITMIME']:
-                self.push('501 Error: BODY can only be one of 7BIT, 8BITMIME')
-                return
+                return self.push('501 Error: BODY can only be one of 7BIT, 8BITMIME')
         if self.enable_smtp_utf8:
             smtp_utf8 = params.pop('SMTPUTF8', False)
             if smtp_utf8 is True:
                 self.require_smtp_utf8 = True
             elif smtp_utf8 is not False:
-                self.push('501 Error: SMTPUTF8 takes no arguments')
-                return
+                return self.push('501 Error: SMTPUTF8 takes no arguments')
         size = params.pop('SIZE', None)
         if size:
             if not size.isdigit():
-                self.push(syntaxerr)
-                return
-            elif self.data_size_limit and int(size) > self.data_size_limit:
-                self.push('552 Error: message size exceeds fixed maximum message size')
-                return
+                return self.push(syntaxerr)
+            if self.data_size_limit and int(size) > self.data_size_limit:
+                return self.push('552 Error: message size exceeds fixed maximum message size')
         if len(params.keys()) > 0:
-            self.push('555 MAIL FROM parameters not recognized or not implemented')
-            return
+            return self.push('555 MAIL FROM parameters not recognized or not implemented')
         self.mail_from = address
         print_to_stderr('sender:', self.mail_from)
         self.push('250 OK')
 
-    def smtp_RCPT(self, arg):
+    def smtp_RCPT(self, arg: Char) -> None:
         if not self.seen_greeting:
-            self.push('503 Error: send HELO first')
-            return
+            return self.push('503 Error: send HELO first')
         print_to_stderr('===> RCPT', arg)
         if not self.mail_from:
-            self.push('503 Error: need MAIL command')
-            return
-        syntaxerr = '501 Syntax: RCPT TO: <address>'
-        if self.extended_smtp:
-            syntaxerr += ' [SP <mail-parameters>]'
+            return self.push('503 Error: need MAIL command')
+        syntaxerr = f'501 Syntax: {self.syntax_RCPT()}'
         if arg is None:
-            self.push(syntaxerr)
-            return
-        arg = self._strip_command_keyword('TO:', arg)
-        address, params = self._getaddr(arg)
+            return self.push(syntaxerr)
+        arg = self.__strip_command_keyword('TO:', arg)
+        address, params = self.__get_addr(arg)
         if not address:
-            self.push(syntaxerr)
-            return
+            return self.push(syntaxerr)
         if not self.extended_smtp and params:
-            self.push(syntaxerr)
-            return
+            return self.push(syntaxerr)
         self.rcpt_options = params.upper().split()
-        params = self._getparams(self.rcpt_options)
+        params = self.__get_params(self.rcpt_options)
         if params is None:
-            self.push(syntaxerr)
-            return
+            return self.push(syntaxerr)
         # XXX currently there are no options we recognize.
         if len(params.keys()) > 0:
-            self.push('555 RCPT TO parameters not recognized or not implemented')
-            return
+            return self.push('555 RCPT TO parameters not recognized or not implemented')
         self.rcpt_tos.append(address)
-        print_to_stderr('recips:', self.rcpt_tos)
+        print_to_stderr('recipes:', self.rcpt_tos)
         self.push('250 OK')
 
-    def smtp_RSET(self, arg):
+    def smtp_RSET(self, arg: Char) -> None:
         if arg:
-            self.push('501 Syntax: RSET')
-            return
+            return self.push(f'501 Syntax: {SmtpStream.syntax_RSET()}')
         self.__set_reset_state()
         self.push('250 OK')
 
-    def smtp_DATA(self, arg):
+    def smtp_DATA(self, arg: Char) -> None:
         if not self.seen_greeting:
-            self.push('503 Error: send HELO first')
-            return
+            return self.push('503 Error: send HELO first')
         if not self.rcpt_tos:
-            self.push('503 Error: need RCPT command')
-            return
+            return self.push('503 Error: need RCPT command')
         if arg:
-            self.push('501 Syntax: DATA')
-            return
+            return self.push(f'501 Syntax: {self.syntax_DATA()}')
         self.smtp_state = SmtpStream.State.DATA
         self.set_terminator(b'\r\n.\r\n')
         self.push('354 End data with <CR><LF>.<CR><LF>')
-
-    # Commands that have not been implemented
-    def smtp_EXPN(self, arg):
-        self.push('502 EXPN not implemented')
 
 
 class SMTPServer(asyncore.dispatcher):
