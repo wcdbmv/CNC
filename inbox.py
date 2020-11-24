@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import main as smtpd
+from smpt_server import SmtpServer
 import asyncore
 import argparse
 from email.parser import Parser
@@ -10,41 +10,35 @@ import logging
 log = logging.Logger(__name__)
 
 
-class InboxServer(smtpd.SMTPServer, object):
-    """Logging-enabled SMTPServer instance with handler support."""
-
+class SmtpInboxServer(SmtpServer, object):
     def __init__(self, handler, *args, **kwargs):
-        super(InboxServer, self).__init__(*args, **kwargs)
-        self._handler = handler
+        super().__init__(*args, **kwargs)
+        self.__handler = handler
 
     def process_message(self, peer, mailfrom, rcpttos, data, **kwargs):
-        log.info('Collating message from {0}'.format(mailfrom))
+        log.info('Collating message from {mailfrom}')
         subject = Parser().parsestr(data)['subject']
         log.debug(dict(to=rcpttos, sender=mailfrom, subject=subject, body=data))
-        return self._handler(to=rcpttos, sender=mailfrom, subject=subject, body=data)
+        return self.__handler(to=rcpttos, sender=mailfrom, subject=subject, body=data)
 
 
-class Inbox(object):
-    """A simple SMTP Inbox."""
-
+class SmtpInbox(object):
     def __init__(self, port=None, address=None):
         self.port = port
         self.address = address
         self.collator = None
 
     def collate(self, collator):
-        """Function decorator. Used to specify inbox handler."""
         self.collator = collator
         return collator
 
     def serve(self, port=None, address=None):
-        """Serves the SMTP server on the given port and address."""
         port = port or self.port
         address = address or self.address
 
-        log.info('Starting SMTP server at {0}:{1}'.format(address, port))
+        log.info(f'Starting SmtpServer at {address}:{port}')
 
-        server = InboxServer(self.collator, (address, port), None, decode_data=True)
+        server = SmtpInboxServer(self.collator, (address, port), None, decode_data=True)
 
         try:
             asyncore.loop()
@@ -52,8 +46,7 @@ class Inbox(object):
             log.info('Cleaning up')
 
     def dispatch(self):
-        """Command-line dispatch."""
-        parser = argparse.ArgumentParser(description='Run an Inbox server.')
+        parser = argparse.ArgumentParser(description='Run an SmtpInbox server.')
 
         parser.add_argument('addr', metavar='addr', type=str, help='addr to bind to')
         parser.add_argument('port', metavar='port', type=int, help='port to bind to')
@@ -64,7 +57,7 @@ class Inbox(object):
 
 
 if __name__ == '__main__':
-    inbox = Inbox()
+    inbox = SmtpInbox()
 
     @inbox.collate
     def handle(to, sender, subject, body):
