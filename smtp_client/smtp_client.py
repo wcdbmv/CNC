@@ -31,7 +31,7 @@ from libemail.base64mime import body_encode as encode_base64
 __all__ = ['SmtpException', 'SmtpNotSupportedError', 'SmtpServerDisconnected', 'SmtpResponseException',
            'SmtpSenderRefused', 'SmtpRecipientsRefused', 'SmtpDataError',
            'SmtpConnectError', 'SmtpHeloError', 'SmtpAuthenticationError',
-           'quote_addr', 'SMTP', 'SMTP_SSL']
+           'quote_addr', 'SmtpClient', 'SmtpSslClient']
 
 SMTP_PORT = 25
 SMTP_SSL_PORT = 465
@@ -123,7 +123,7 @@ def fix_eols(data):
 SourceAddress = Tuple[str, int]
 
 
-class SMTP:
+class SmtpClient:
     """Этот класс управляет подключением к серверу SMTP или ESMTP."""
     sock = None
     file = None
@@ -845,7 +845,8 @@ class SMTP:
         self.close()
         return res
 
-class SMTP_SSL(SMTP):
+
+class SmtpSslClient(SmtpClient):
     """ This is a subclass derived from SMTP that connects over an SSL
     encrypted socket (to use this class you need a socket module that was
     compiled with SSL support). If host is not specified, '' (the local
@@ -880,56 +881,10 @@ class SMTP_SSL(SMTP):
             context = ssl._create_stdlib_context(certfile=certfile,
                                                  keyfile=keyfile)
         self.context = context
-        SMTP.__init__(self, host, port, local_hostname, source_address)
+        SmtpClient.__init__(self, host, port, local_hostname, source_address)
 
     def _get_socket(self, host, port):
         self._print_debug('connect:', (host, port))
         new_socket = super()._get_socket(host, port)
         new_socket = self.context.wrap_socket(new_socket, server_hostname=self._host)
         return new_socket
-
-#
-# LMTP extension
-#
-LMTP_PORT = 2003
-
-class LMTP(SMTP):
-    """LMTP - Local Mail Transfer Protocol
-
-    The LMTP protocol, which is very similar to ESMTP, is heavily based
-    on the standard SMTP client. It's common to use Unix sockets for
-    LMTP, so our connect() method must support that as well as a regular
-    host:port server.  local_hostname and source_address have the same
-    meaning as they do in the SMTP class.  To specify a Unix socket,
-    you must use an absolute path as the host, starting with a '/'.
-
-    Authentication is supported, using the regular SMTP mechanism. When
-    using a Unix socket, LMTP generally don't support or require any
-    authentication, but your mileage might vary."""
-
-    ehlo_msg = "lhlo"
-
-    def __init__(self, host='', port=LMTP_PORT, local_hostname=None, source_address=None):
-        """Initialize a new instance."""
-        super().__init__(host, port, local_hostname=local_hostname, source_address=source_address)
-
-    def connect(self, host='localhost', port=0, source_address=None):
-        """Connect to the LMTP daemon, on either a Unix or a TCP socket."""
-        if host[0] != '/':
-            return super().connect(host, port, source_address=source_address)
-
-        # Handle Unix-domain sockets.
-        try:
-            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            self.file = None
-            self.sock.connect(host)
-        except OSError:
-            self._print_debug('connect fail:', host)
-            if self.sock:
-                self.sock.close()
-            self.sock = None
-            raise
-        (code, msg) = self.getreply()
-        if self.debuglevel > 0:
-            self._print_debug('connect:', msg)
-        return (code, msg)
