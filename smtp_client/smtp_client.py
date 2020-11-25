@@ -1,5 +1,5 @@
 #! /usr/bin/env python3
-'''SMTP/ESMTP client class.
+"""SMTP/ESMTP client class.
 
 This should follow RFC 821 (SMTP), RFC 1869 (ESMTP), RFC 2554 (SMTP
 Authentication) and RFC 2487 (Secure SMTP over TLS).
@@ -9,27 +9,7 @@ Notes:
 Please remember, when doing ESMTP, that the names of the SMTP service
 extensions are NOT the same thing as the option keywords for the RCPT
 and MAIL commands!
-
-Example:
-
-  >>> import smtplib
-  >>> s=smtplib.SMTP("localhost")
-  >>> print(s.help())
-  This is Sendmail version 8.8.4
-  Topics:
-      HELO    EHLO    MAIL    RCPT    DATA
-      RSET    NOOP    QUIT    HELP    VRFY
-      EXPN    VERB    ETRN    DSN
-  For more info use "HELP <topic>".
-  To report bugs in the implementation send email to
-      sendmail-bugs@sendmail.org.
-  For local information send email to Postmaster at your site.
-  End of HELP info
-  >>> s.putcmd("vrfy","someone@here")
-  >>> s.getreply()
-  (250, "Somebody OverHere <somebody@here.my.org>")
-  >>> s.quit()
-'''
+"""
 
 
 import socket
@@ -54,13 +34,14 @@ SMTP_PORT = 25
 SMTP_SSL_PORT = 465
 CRLF = "\r\n"
 bCRLF = b"\r\n"
-_MAXLINE = 8192 # more than 8 times larger than RFC 821, 4.5.3
+__MAX_LINE = 8192  # more than 8 times larger than RFC 5321, 4.5.3.1.6.
 
 OLDSTYLE_AUTH = re.compile(r"auth=(.*)", re.I)
 
-# Exception classes used by this module.
+
 class SMTPException(OSError):
     """Base class for all exceptions raised by this module."""
+
 
 class SMTPNotSupportedError(SMTPException):
     """The command or option is not supported by the SMTP server.
@@ -69,6 +50,7 @@ class SMTPNotSupportedError(SMTPException):
     command with an option which is not supported by the server.
     """
 
+
 class SMTPServerDisconnected(SMTPException):
     """Not connected to any SMTP server.
 
@@ -76,6 +58,7 @@ class SMTPServerDisconnected(SMTPException):
     or when an attempt is made to use the SMTP instance before
     connecting it to a server.
     """
+
 
 class SMTPResponseException(SMTPException):
     """Base class for all exceptions that include an SMTP error code.
@@ -91,6 +74,7 @@ class SMTPResponseException(SMTPException):
         self.smtp_error = msg
         self.args = (code, msg)
 
+
 class SMTPSenderRefused(SMTPResponseException):
     """Sender address refused.
 
@@ -103,6 +87,7 @@ class SMTPSenderRefused(SMTPResponseException):
         self.smtp_error = msg
         self.sender = sender
         self.args = (code, msg, sender)
+
 
 class SMTPRecipientsRefused(SMTPException):
     """All recipient addresses refused.
@@ -120,11 +105,14 @@ class SMTPRecipientsRefused(SMTPException):
 class SMTPDataError(SMTPResponseException):
     """The SMTP server didn't accept the data."""
 
+
 class SMTPConnectError(SMTPResponseException):
     """Error during connection establishment."""
 
+
 class SMTPHeloError(SMTPResponseException):
     """The server refused our HELO reply."""
+
 
 class SMTPAuthenticationError(SMTPResponseException):
     """Authentication error.
@@ -132,6 +120,7 @@ class SMTPAuthenticationError(SMTPResponseException):
     Most probably the server didn't accept the username/password
     combination provided.
     """
+
 
 def quoteaddr(addrstring):
     """Quote a subset of the email addresses defined by RFC 821.
@@ -146,12 +135,14 @@ def quoteaddr(addrstring):
         return "<%s>" % addrstring
     return "<%s>" % addr
 
+
 def _addr_only(addrstring):
     displayname, addr = email.utils.parseaddr(addrstring)
     if (displayname, addr) == ('', ''):
         # parseaddr couldn't parse it, so use it as is.
         return addrstring
     return addr
+
 
 # Legacy method kept for backward compatibility.
 def quotedata(data):
@@ -163,18 +154,16 @@ def quotedata(data):
     return re.sub(r'(?m)^\.', '..',
         re.sub(r'(?:\r\n|\n|\r(?!\n))', CRLF, data))
 
+
 def _quote_periods(bindata):
     return re.sub(br'(?m)^\.', b'..', bindata)
+
 
 def _fix_eols(data):
     return  re.sub(r'(?:\r\n|\n|\r(?!\n))', CRLF, data)
 
-try:
-    import ssl
-except ImportError:
-    _have_ssl = False
-else:
-    _have_ssl = True
+
+import ssl
 
 
 class SMTP:
@@ -379,7 +368,7 @@ class SMTP:
             self.file = self.sock.makefile('rb')
         while 1:
             try:
-                line = self.file.readline(_MAXLINE + 1)
+                line = self.file.readline(__MAX_LINE + 1)
             except OSError as e:
                 self.close()
                 raise SMTPServerDisconnected("Connection unexpectedly closed: "
@@ -389,7 +378,7 @@ class SMTP:
                 raise SMTPServerDisconnected("Connection unexpectedly closed")
             if self.debuglevel > 0:
                 self._print_debug('reply:', repr(line))
-            if len(line) > _MAXLINE:
+            if len(line) > __MAX_LINE:
                 self.close()
                 raise SMTPResponseException(500, "Line too long.")
             resp.append(line[4:].strip(b' \t\r\n'))
@@ -747,8 +736,6 @@ class SMTP:
                 "STARTTLS extension not supported by server.")
         (resp, reply) = self.docmd("STARTTLS")
         if resp == 220:
-            if not _have_ssl:
-                raise RuntimeError("No SSL support included in this Python")
             if context is not None and keyfile is not None:
                 raise ValueError("context and keyfile arguments are mutually "
                                  "exclusive")
@@ -984,56 +971,54 @@ class SMTP:
         self.close()
         return res
 
-if _have_ssl:
+class SMTP_SSL(SMTP):
+    """ This is a subclass derived from SMTP that connects over an SSL
+    encrypted socket (to use this class you need a socket module that was
+    compiled with SSL support). If host is not specified, '' (the local
+    host) is used. If port is omitted, the standard SMTP-over-SSL port
+    (465) is used.  local_hostname and source_address have the same meaning
+    as they do in the SMTP class.  keyfile and certfile are also optional -
+    they can contain a PEM formatted private key and certificate chain file
+    for the SSL connection. context also optional, can contain a
+    SSLContext, and is an alternative to keyfile and certfile; If it is
+    specified both keyfile and certfile must be None.
 
-    class SMTP_SSL(SMTP):
-        """ This is a subclass derived from SMTP that connects over an SSL
-        encrypted socket (to use this class you need a socket module that was
-        compiled with SSL support). If host is not specified, '' (the local
-        host) is used. If port is omitted, the standard SMTP-over-SSL port
-        (465) is used.  local_hostname and source_address have the same meaning
-        as they do in the SMTP class.  keyfile and certfile are also optional -
-        they can contain a PEM formatted private key and certificate chain file
-        for the SSL connection. context also optional, can contain a
-        SSLContext, and is an alternative to keyfile and certfile; If it is
-        specified both keyfile and certfile must be None.
+    """
 
-        """
+    default_port = SMTP_SSL_PORT
 
-        default_port = SMTP_SSL_PORT
+    def __init__(self, host='', port=0, local_hostname=None,
+                 keyfile=None, certfile=None,
+                 timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
+                 source_address=None, context=None):
+        if context is not None and keyfile is not None:
+            raise ValueError("context and keyfile arguments are mutually "
+                             "exclusive")
+        if context is not None and certfile is not None:
+            raise ValueError("context and certfile arguments are mutually "
+                             "exclusive")
+        if keyfile is not None or certfile is not None:
+            import warnings
+            warnings.warn("keyfile and certfile are deprecated, use a "
+                          "custom context instead", DeprecationWarning, 2)
+        self.keyfile = keyfile
+        self.certfile = certfile
+        if context is None:
+            context = ssl._create_stdlib_context(certfile=certfile,
+                                                 keyfile=keyfile)
+        self.context = context
+        SMTP.__init__(self, host, port, local_hostname, timeout,
+                      source_address)
 
-        def __init__(self, host='', port=0, local_hostname=None,
-                     keyfile=None, certfile=None,
-                     timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
-                     source_address=None, context=None):
-            if context is not None and keyfile is not None:
-                raise ValueError("context and keyfile arguments are mutually "
-                                 "exclusive")
-            if context is not None and certfile is not None:
-                raise ValueError("context and certfile arguments are mutually "
-                                 "exclusive")
-            if keyfile is not None or certfile is not None:
-                import warnings
-                warnings.warn("keyfile and certfile are deprecated, use a "
-                              "custom context instead", DeprecationWarning, 2)
-            self.keyfile = keyfile
-            self.certfile = certfile
-            if context is None:
-                context = ssl._create_stdlib_context(certfile=certfile,
-                                                     keyfile=keyfile)
-            self.context = context
-            SMTP.__init__(self, host, port, local_hostname, timeout,
-                          source_address)
+    def _get_socket(self, host, port, timeout):
+        if self.debuglevel > 0:
+            self._print_debug('connect:', (host, port))
+        new_socket = super()._get_socket(host, port, timeout)
+        new_socket = self.context.wrap_socket(new_socket,
+                                              server_hostname=self._host)
+        return new_socket
 
-        def _get_socket(self, host, port, timeout):
-            if self.debuglevel > 0:
-                self._print_debug('connect:', (host, port))
-            new_socket = super()._get_socket(host, port, timeout)
-            new_socket = self.context.wrap_socket(new_socket,
-                                                  server_hostname=self._host)
-            return new_socket
-
-    __all__.append("SMTP_SSL")
+__all__.append("SMTP_SSL")
 
 #
 # LMTP extension
@@ -1087,28 +1072,3 @@ class LMTP(SMTP):
         if self.debuglevel > 0:
             self._print_debug('connect:', msg)
         return (code, msg)
-
-
-# Test the sendmail method, which tests most of the others.
-# Note: This always sends to localhost.
-if __name__ == '__main__':
-    def prompt(prompt):
-        sys.stdout.write(prompt + ": ")
-        sys.stdout.flush()
-        return sys.stdin.readline().strip()
-
-    fromaddr = prompt("From")
-    toaddrs = prompt("To").split(',')
-    print("Enter message, end with ^D:")
-    msg = ''
-    while 1:
-        line = sys.stdin.readline()
-        if not line:
-            break
-        msg = msg + line
-    print("Message length is %d" % len(msg))
-
-    server = SMTP('localhost')
-    server.set_debuglevel(1)
-    server.sendmail(fromaddr, toaddrs, msg)
-    server.quit()
