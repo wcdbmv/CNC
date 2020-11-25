@@ -25,9 +25,9 @@ import datetime
 import sys
 from libemail.base64mime import body_encode as encode_base64
 
-__all__ = ["SMTPException", "SMTPNotSupportedError", "SMTPServerDisconnected", "SMTPResponseException",
-           "SMTPSenderRefused", "SMTPRecipientsRefused", "SMTPDataError",
-           "SMTPConnectError", "SMTPHeloError", "SMTPAuthenticationError",
+__all__ = ["SmtpException", "SmtpNotSupportedError", "SmtpServerDisconnected", "SmtpResponseException",
+           "SmtpSenderRefused", "SmtpRecipientsRefused", "SmtpDataError",
+           "SmtpConnectError", "SmtpHeloError", "SmtpAuthenticationError",
            "quoteaddr", "quotedata", "SMTP"]
 
 SMTP_PORT = 25
@@ -39,35 +39,20 @@ __MAX_LINE = 8192  # more than 8 times larger than RFC 5321, 4.5.3.1.6.
 OLDSTYLE_AUTH = re.compile(r"auth=(.*)", re.I)
 
 
-class SMTPException(OSError):
-    """Base class for all exceptions raised by this module."""
+class SmtpException(OSError):
+    """Базовый класс для всех исключений, создаваемых этим модулем."""
 
 
-class SMTPNotSupportedError(SMTPException):
-    """The command or option is not supported by the SMTP server.
-
-    This exception is raised when an attempt is made to run a command or a
-    command with an option which is not supported by the server.
-    """
+class SmtpNotSupportedError(SmtpException):
+    """Команда или параметр не поддерживается сервером SMTP."""
 
 
-class SMTPServerDisconnected(SMTPException):
-    """Not connected to any SMTP server.
-
-    This exception is raised when the server unexpectedly disconnects,
-    or when an attempt is made to use the SMTP instance before
-    connecting it to a server.
-    """
+class SmtpServerDisconnected(SmtpException):
+    """Не подключен ни к одному SMTP-серверу."""
 
 
-class SMTPResponseException(SMTPException):
-    """Base class for all exceptions that include an SMTP error code.
-
-    These exceptions are generated in some instances when the SMTP
-    server returns an error code.  The error code is stored in the
-    `smtp_code' attribute of the error, and the `smtp_error' attribute
-    is set to the error message.
-    """
+class SmtpResponseException(SmtpException):
+    """Базовый класс для всех исключений, включающих код ошибки SMTP."""
 
     def __init__(self, code, msg):
         self.smtp_code = code
@@ -75,12 +60,8 @@ class SMTPResponseException(SMTPException):
         self.args = (code, msg)
 
 
-class SMTPSenderRefused(SMTPResponseException):
-    """Sender address refused.
-
-    In addition to the attributes set by on all SMTPResponseException
-    exceptions, this sets `sender' to the string that the SMTP refused.
-    """
+class SmtpSenderRefused(SmtpResponseException):
+    """Адрес отправителя отклонен."""
 
     def __init__(self, code, msg, sender):
         self.smtp_code = code
@@ -89,37 +70,28 @@ class SMTPSenderRefused(SMTPResponseException):
         self.args = (code, msg, sender)
 
 
-class SMTPRecipientsRefused(SMTPException):
-    """All recipient addresses refused.
-
-    The errors for each recipient are accessible through the attribute
-    'recipients', which is a dictionary of exactly the same sort as
-    SMTP.sendmail() returns.
-    """
+class SmtpRecipientsRefused(SmtpException):
+    """Все адреса получателей отклонены."""
 
     def __init__(self, recipients):
         self.recipients = recipients
         self.args = (recipients,)
 
 
-class SMTPDataError(SMTPResponseException):
-    """The SMTP server didn't accept the data."""
+class SmtpDataError(SmtpResponseException):
+    """Сервер SMTP не принял данные."""
 
 
-class SMTPConnectError(SMTPResponseException):
-    """Error during connection establishment."""
+class SmtpConnectError(SmtpResponseException):
+    """Ошибка при установлении соединения."""
 
 
-class SMTPHeloError(SMTPResponseException):
-    """The server refused our HELO reply."""
+class SmtpHeloError(SmtpResponseException):
+    """Сервер отказался от нашего ответа HELO."""
 
 
-class SMTPAuthenticationError(SMTPResponseException):
-    """Authentication error.
-
-    Most probably the server didn't accept the username/password
-    combination provided.
-    """
+class SmtpAuthenticationError(SmtpResponseException):
+    """Ошибка аутентификации."""
 
 
 def quoteaddr(addrstring):
@@ -233,7 +205,7 @@ class SMTP:
             (code, msg) = self.connect(host, port)
             if code != 220:
                 self.close()
-                raise SMTPConnectError(code, msg)
+                raise SmtpConnectError(code, msg)
         if local_hostname is not None:
             self.local_hostname = local_hostname
         else:
@@ -259,8 +231,8 @@ class SMTP:
         try:
             code, message = self.docmd("QUIT")
             if code != 221:
-                raise SMTPResponseException(code, message)
-        except SMTPServerDisconnected:
+                raise SmtpResponseException(code, message)
+        except SmtpServerDisconnected:
             pass
         finally:
             self.close()
@@ -338,9 +310,9 @@ class SMTP:
                 self.sock.sendall(s)
             except OSError:
                 self.close()
-                raise SMTPServerDisconnected('Server not connected')
+                raise SmtpServerDisconnected('Server not connected')
         else:
-            raise SMTPServerDisconnected('please run connect() first')
+            raise SmtpServerDisconnected('please run connect() first')
 
     def putcmd(self, cmd, args=""):
         """Send a command to the server."""
@@ -371,16 +343,16 @@ class SMTP:
                 line = self.file.readline(__MAX_LINE + 1)
             except OSError as e:
                 self.close()
-                raise SMTPServerDisconnected("Connection unexpectedly closed: "
+                raise SmtpServerDisconnected("Connection unexpectedly closed: "
                                              + str(e))
             if not line:
                 self.close()
-                raise SMTPServerDisconnected("Connection unexpectedly closed")
+                raise SmtpServerDisconnected("Connection unexpectedly closed")
             if self.debuglevel > 0:
                 self._print_debug('reply:', repr(line))
             if len(line) > __MAX_LINE:
                 self.close()
-                raise SMTPResponseException(500, "Line too long.")
+                raise SmtpResponseException(500, "Line too long.")
             resp.append(line[4:].strip(b' \t\r\n'))
             code = line[:3]
             # Check that the error code is syntactically correct.
@@ -428,7 +400,7 @@ class SMTP:
         # that happens -ddm
         if code == -1 and len(msg) == 0:
             self.close()
-            raise SMTPServerDisconnected("Server not connected")
+            raise SmtpServerDisconnected("Server not connected")
         self.ehlo_resp = msg
         if code != 250:
             return (code, msg)
@@ -490,7 +462,7 @@ class SMTP:
         """
         try:
             self.rset()
-        except SMTPServerDisconnected:
+        except SmtpServerDisconnected:
             pass
 
     def noop(self):
@@ -512,7 +484,7 @@ class SMTP:
                 if self.has_extn('smtputf8'):
                     self.command_encoding = 'utf-8'
                 else:
-                    raise SMTPNotSupportedError(
+                    raise SmtpNotSupportedError(
                         'SMTPUTF8 not supported by server')
             optionlist = ' ' + ' '.join(options)
         self.putcmd("mail", "FROM:%s%s" % (quoteaddr(sender), optionlist))
@@ -541,7 +513,7 @@ class SMTP:
         if self.debuglevel > 0:
             self._print_debug('data:', (code, repl))
         if code != 354:
-            raise SMTPDataError(code, repl)
+            raise SmtpDataError(code, repl)
         else:
             if isinstance(msg, str):
                 msg = _fix_eols(msg).encode('ascii')
@@ -584,7 +556,7 @@ class SMTP:
             if not (200 <= self.ehlo()[0] <= 299):
                 (code, resp) = self.helo()
                 if not (200 <= code <= 299):
-                    raise SMTPHeloError(code, resp)
+                    raise SmtpHeloError(code, resp)
 
     def auth(self, mechanism, authobject, *, initial_response_ok=True):
         """Authentication command - requires response processing.
@@ -623,7 +595,7 @@ class SMTP:
             (code, resp) = self.docmd(response)
         if code in (235, 503):
             return (code, resp)
-        raise SMTPAuthenticationError(code, resp)
+        raise SmtpAuthenticationError(code, resp)
 
     def auth_cram_md5(self, challenge=None):
         """ Authobject to use with CRAM-MD5 authentication. Requires self.user
@@ -677,7 +649,7 @@ class SMTP:
 
         self.ehlo_or_helo_if_needed()
         if not self.has_extn("auth"):
-            raise SMTPNotSupportedError(
+            raise SmtpNotSupportedError(
                 "SMTP AUTH extension not supported by server.")
 
         # Authentication methods the server claims to support
@@ -691,7 +663,7 @@ class SMTP:
         authlist = [auth for auth in preferred_auths
                     if auth in advertised_authlist]
         if not authlist:
-            raise SMTPException("No suitable authentication method found.")
+            raise SmtpException("No suitable authentication method found.")
 
         # Some servers advertise authentication methods they don't really
         # support, so if authentication fails, we continue until we've tried
@@ -707,7 +679,7 @@ class SMTP:
                 # 503 == 'Error: already authenticated'
                 if code in (235, 503):
                     return (code, resp)
-            except SMTPAuthenticationError as e:
+            except SmtpAuthenticationError as e:
                 last_exception = e
 
         # We could not login successfully.  Return result of last attempt.
@@ -732,7 +704,7 @@ class SMTP:
         """
         self.ehlo_or_helo_if_needed()
         if not self.has_extn("starttls"):
-            raise SMTPNotSupportedError(
+            raise SmtpNotSupportedError(
                 "STARTTLS extension not supported by server.")
         (resp, reply) = self.docmd("STARTTLS")
         if resp == 220:
@@ -764,7 +736,7 @@ class SMTP:
             # RFC 3207:
             # 501 Syntax error (no parameters allowed)
             # 454 TLS not available due to temporary reason
-            raise SMTPResponseException(resp, reply)
+            raise SmtpResponseException(resp, reply)
         return (resp, reply)
 
     def sendmail(self, from_addr, to_addrs, msg, mail_options=(),
@@ -846,7 +818,7 @@ class SMTP:
                 self.close()
             else:
                 self._rset()
-            raise SMTPSenderRefused(code, resp, from_addr)
+            raise SmtpSenderRefused(code, resp, from_addr)
         senderrs = {}
         if isinstance(to_addrs, str):
             to_addrs = [to_addrs]
@@ -856,18 +828,18 @@ class SMTP:
                 senderrs[each] = (code, resp)
             if code == 421:
                 self.close()
-                raise SMTPRecipientsRefused(senderrs)
+                raise SmtpRecipientsRefused(senderrs)
         if len(senderrs) == len(to_addrs):
             # the server refused all our recipients
             self._rset()
-            raise SMTPRecipientsRefused(senderrs)
+            raise SmtpRecipientsRefused(senderrs)
         (code, resp) = self.data(msg)
         if code != 250:
             if code == 421:
                 self.close()
             else:
                 self._rset()
-            raise SMTPDataError(code, resp)
+            raise SmtpDataError(code, resp)
         #if we got here then somebody got our mail
         return senderrs
 
@@ -931,7 +903,7 @@ class SMTP:
             ''.join([from_addr, *to_addrs]).encode('ascii')
         except UnicodeEncodeError:
             if not self.has_extn('smtputf8'):
-                raise SMTPNotSupportedError(
+                raise SmtpNotSupportedError(
                     "One or more source or delivery addresses require"
                     " internationalized email support, but the server"
                     " does not advertise the required SMTPUTF8 capability")
