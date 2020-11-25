@@ -12,23 +12,24 @@ and MAIL commands!
 """
 
 
-import socket
-import io
-import re
-import email.utils
-import email.message
-import email.generator
 import base64
-import hmac
 import copy
 import datetime
+import email.generator
+import email.message
+import email.utils
+import hmac
+import io
+import re
+import socket
+import ssl
 import sys
 from libemail.base64mime import body_encode as encode_base64
 
 __all__ = ["SmtpException", "SmtpNotSupportedError", "SmtpServerDisconnected", "SmtpResponseException",
            "SmtpSenderRefused", "SmtpRecipientsRefused", "SmtpDataError",
            "SmtpConnectError", "SmtpHeloError", "SmtpAuthenticationError",
-           "quoteaddr", "quotedata", "SMTP"]
+           "quote_addr", "SMTP"]
 
 SMTP_PORT = 25
 SMTP_SSL_PORT = 465
@@ -94,48 +95,27 @@ class SmtpAuthenticationError(SmtpResponseException):
     """Ошибка аутентификации."""
 
 
-def quoteaddr(addrstring):
-    """Quote a subset of the email addresses defined by RFC 821.
-
-    Should be able to handle anything email.utils.parseaddr can handle.
-    """
-    displayname, addr = email.utils.parseaddr(addrstring)
-    if (displayname, addr) == ('', ''):
-        # parseaddr couldn't parse it, use it as is and hope for the best.
-        if addrstring.strip().startswith('<'):
-            return addrstring
-        return "<%s>" % addrstring
-    return "<%s>" % addr
+def quote_addr(addr_string):
+    """Оборачивает в кавычки подмножество email адресов, определённых в RFC 5321."""
+    display_name, addr = email.utils.parseaddr(addr_string)
+    if (display_name, addr) == ('', ''):
+        return addr_string if addr_string.strip().startswith('<') else f'<{addr_string}>'
+    return f'<{addr}>'
 
 
-def _addr_only(addrstring):
-    displayname, addr = email.utils.parseaddr(addrstring)
-    if (displayname, addr) == ('', ''):
-        # parseaddr couldn't parse it, so use it as is.
-        return addrstring
+def __addr_only(addr_string):
+    display_name, addr = email.utils.parseaddr(addr_string)
+    if (display_name, addr) == ('', ''):
+        return addr_string
     return addr
 
 
-# Legacy method kept for backward compatibility.
-def quotedata(data):
-    """Quote data for email.
-
-    Double leading '.', and change Unix newline '\\n', or Mac '\\r' into
-    Internet CRLF end-of-line.
-    """
-    return re.sub(r'(?m)^\.', '..',
-        re.sub(r'(?:\r\n|\n|\r(?!\n))', CRLF, data))
+def __quote_periods(bin_data):
+    return re.sub(br'(?m)^\.', b'..', bin_data)
 
 
-def _quote_periods(bindata):
-    return re.sub(br'(?m)^\.', b'..', bindata)
-
-
-def _fix_eols(data):
-    return  re.sub(r'(?:\r\n|\n|\r(?!\n))', CRLF, data)
-
-
-import ssl
+def __fix_eols(data):
+    return re.sub(r'(?:\r\n|\n|\r(?!\n))', CRLF, data)
 
 
 class SMTP:
@@ -487,7 +467,7 @@ class SMTP:
                     raise SmtpNotSupportedError(
                         'SMTPUTF8 not supported by server')
             optionlist = ' ' + ' '.join(options)
-        self.putcmd("mail", "FROM:%s%s" % (quoteaddr(sender), optionlist))
+        self.putcmd("mail", "FROM:%s%s" % (quote_addr(sender), optionlist))
         return self.getreply()
 
     def rcpt(self, recip, options=()):
@@ -495,7 +475,7 @@ class SMTP:
         optionlist = ''
         if options and self.does_esmtp:
             optionlist = ' ' + ' '.join(options)
-        self.putcmd("rcpt", "TO:%s%s" % (quoteaddr(recip), optionlist))
+        self.putcmd("rcpt", "TO:%s%s" % (quote_addr(recip), optionlist))
         return self.getreply()
 
     def data(self, msg):
@@ -516,8 +496,8 @@ class SMTP:
             raise SmtpDataError(code, repl)
         else:
             if isinstance(msg, str):
-                msg = _fix_eols(msg).encode('ascii')
-            q = _quote_periods(msg)
+                msg = __fix_eols(msg).encode('ascii')
+            q = __quote_periods(msg)
             if q[-2:] != bCRLF:
                 q = q + bCRLF
             q = q + b"." + bCRLF
@@ -529,14 +509,14 @@ class SMTP:
 
     def verify(self, address):
         """SMTP 'verify' command -- checks for address validity."""
-        self.putcmd("vrfy", _addr_only(address))
+        self.putcmd("vrfy", __addr_only(address))
         return self.getreply()
     # a.k.a.
     vrfy = verify
 
     def expn(self, address):
         """SMTP 'expn' command -- expands a mailing list."""
-        self.putcmd("expn", _addr_only(address))
+        self.putcmd("expn", __addr_only(address))
         return self.getreply()
 
     # some useful methods
@@ -806,7 +786,7 @@ class SMTP:
         self.ehlo_or_helo_if_needed()
         esmtp_opts = []
         if isinstance(msg, str):
-            msg = _fix_eols(msg).encode('ascii')
+            msg = __fix_eols(msg).encode('ascii')
         if self.does_esmtp:
             if self.has_extn('size'):
                 esmtp_opts.append("size=%d" % len(msg))
