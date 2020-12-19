@@ -3,3 +3,11 @@ __pycache__
 env/
 venv/
 db.sqlite3
+
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.synctex.gz
+*.toc
