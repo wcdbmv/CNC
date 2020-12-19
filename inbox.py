@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from contextlib import closing
 from smpt_server import SmtpServer
 import asyncore
 import argparse
@@ -9,6 +10,16 @@ import sqlite3
 import datetime
 
 log = logging.Logger(__name__)
+
+DATABASE = 'backend/db.sqlite3'
+
+
+def execute_statement(query):
+    lastrowid = None
+    with closing(sqlite3.connect(DATABASE)) as connection, connection, closing(connection.cursor()) as cursor:
+        cursor.execute(query)
+        lastrowid = cursor.lastrowid
+    return lastrowid
 
 
 class SmtpInboxServer(SmtpServer, object):
@@ -60,38 +71,25 @@ class SmtpInbox(object):
 if __name__ == '__main__':
     inbox = SmtpInbox()
 
-    try:
-        connection = sqlite3.connect('backend/db.sqlite3')
-        cursor = connection.cursor()
-    except sqlite3.Error:
-        print('Failed to connect to database')
-        exit(1)
-
-
     @inbox.collate
     def handle(to, sender, subject, body):
         try:
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cursor.execute(
+            message_id = execute_statement(
                 f'INSERT INTO webmail_message '
                 f'(from_email, time, subject, body) '
                 f'VALUES '
                 f'(\"{sender}\", \"{time}\", \"{subject}\", \"{body}\")'
             )
-            message_id = cursor.lastrowid
             for recipient in to:
-                cursor.execute(
+                execute_statement(
                     f'INSERT INTO webmail_messageto'
                     f'(to_email, message_id)'
                     f'VALUES'
                     f'(\"{recipient}\", \"{message_id}\")'
                 )
-            connection.commit()
         except sqlite3.Error as e:
             print('Failed to insert data:', e)
 
 
     inbox.serve(address='0.0.0.0', port=4467)
-
-    cursor.close()
-    connection.close()
