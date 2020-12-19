@@ -5,7 +5,8 @@ import asyncore
 import argparse
 from email.parser import Parser
 import logging
-
+import sqlite3
+import datetime
 
 log = logging.Logger(__name__)
 
@@ -59,12 +60,38 @@ class SmtpInbox(object):
 if __name__ == '__main__':
     inbox = SmtpInbox()
 
+    try:
+        connection = sqlite3.connect('backend/db.sqlite3')
+        cursor = connection.cursor()
+    except sqlite3.Error:
+        print('Failed to connect to database')
+        exit(1)
+
+
     @inbox.collate
     def handle(to, sender, subject, body):
-        print(f'TO: {to}')
-        print(f'SENDER: {sender}')
-        print(f'SUBJECT: {subject}')
-        print(f'BODY: {body}')
+        try:
+            time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cursor.execute(
+                f'INSERT INTO webmail_message '
+                f'(from_email, time, subject, body) '
+                f'VALUES '
+                f'(\"{sender}\", \"{time}\", \"{subject}\", \"{body}\")'
+            )
+            message_id = cursor.lastrowid
+            for recipient in to:
+                cursor.execute(
+                    f'INSERT INTO webmail_messageto'
+                    f'(to_email, message_id)'
+                    f'VALUES'
+                    f'(\"{recipient}\", \"{message_id}\")'
+                )
+            connection.commit()
+        except sqlite3.Error as e:
+            print('Failed to insert data:', e)
 
 
     inbox.serve(address='0.0.0.0', port=4467)
+
+    cursor.close()
+    connection.close()
