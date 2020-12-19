@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+
+{% block title %}Outbox{% endblock %}
+
+{% block content %}
+    <h1>Outbox</h1>
+
+    {% for message in messages %}
+        <div class="row">
+            <div class="col-3">
+                {% for to in message.recipient.all %}
+                    {{ to.to_email }}
+                {% endfor %}
+            </div>
+            <div class="col-9">
+                {{ message.subject }} - {{ message.body }}
+            </div>
+        </div>
+    {% endfor %}
+{% endblock %}
