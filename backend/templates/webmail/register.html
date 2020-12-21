@@ -3,32 +3,37 @@
 {% block title %}Register{% endblock %}
 
 {% block content %}
-    <form method="post" class="form-sign">
-        {% csrf_token %}
-        <div class="form-group">
-            {% if form.username.errors %}
-                <label class="alert alert-danger">{{ form.username.errors }}</label>
-            {% endif %}
-            <input type="text" placeholder="Username" class="form-control" name="username" required
-                   value="{{ form.username.value|default:"" }}">
+    <div class="mt-5 mb-5 p-5 col-4 offset-4 border border-primary rounded">
+        <form method="post" class="form-sign">
+            {% csrf_token %}
+            <div class="form-group">
+                {% if form.username.errors %}
+                    <label class="alert alert-danger">{{ form.username.errors }}</label>
+                {% endif %}
+                <input type="text" placeholder="Username" class="form-control" name="username" required
+                       value="{{ form.username.value|default:"" }}">
+            </div>
+            <div class="form-group">
+                {% if form.email.errors %}
+                    <label class="alert alert-danger">{{ form.email.errors }}</label>
+                {% endif %}
+                <input type="text" placeholder="Email" class="form-control" name="email" required
+                       value="{{ form.email.value|default:"" }}">
+            </div>
+            <div class="form-group">
+                {% if form.password.errors %}
+                    <label class="alert alert-danger">{{ form.password.errors }}</label>
+                {% endif %}
+                <input type="password" placeholder="Password" class="form-control" name="password" required
+                       value="{{ form.password.value|default:"" }}">
+            </div>
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary btn-block">Register</button>
+            </div>
+        </form>
+        <div class="m-0 p-0 alert alert-light">
+            Already have an account? <a href="{% url 'login' %}">Sign in</a>
         </div>
-        <div class="form-group">
-            {% if form.email.errors %}
-                <label class="alert alert-danger">{{ form.email.errors }}</label>
-            {% endif %}
-            <input type="text" placeholder="Email" class="form-control" name="email" required
-                   value="{{ form.email.value|default:"" }}">
-        </div>
-        <div class="form-group">
-            {% if form.password.errors %}
-                <label class="alert alert-danger">{{ form.password.errors }}</label>
-            {% endif %}
-            <input type="password" placeholder="Password" class="form-control" name="password" required
-                   value="{{ form.password.value|default:"" }}">
-        </div>
-        <div class="form-group">
-            <button type="submit" class="btn btn-primary btn-block">Submit</button>
-        </div>
-    </form>
-    Already have an account? <a href="{% url 'login' %}">Sign in</a>
+
+    </div>
 {% endblock content %}
