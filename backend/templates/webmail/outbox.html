@@ -7,20 +7,18 @@
 
     <table class="table table-striped">
         {% for message in messages %}
-            <a href="#">
-                <tr class="row">
-                    <td class="col-3 ellipsis">
-                        {% for to in message.recipient.all %}
-                            {{ to.to_email }}
-                        {% endfor %}
-                    </td>
-                    <td class="col-7 ellipsis " onclick="document.location = '{% url 'webmail:message' message.id %}';"
-                        style="cursor: pointer;">{{ message.subject }} — {{ message.body }}</td>
-                    <td class="col-2 text-right">
-                        <a href="#">Delete</a>
-                    </td>
-                </tr>
-            </a>
+            <tr class="row">
+                <td class="col-3 ellipsis">
+                    {% for to in message.recipient.all %}
+                        {{ to.to_email }}
+                    {% endfor %}
+                </td>
+                <td class="col-7 ellipsis " onclick="document.location = '{% url 'webmail:message' message.id %}';"
+                    style="cursor: pointer;">{{ message.subject }} — {{ message.body }}</td>
+                <td class="col-2 text-right">
+                    <a href="#">Delete</a>
+                </td>
+            </tr>
         {% endfor %}
     </table>
 {% endblock %}
