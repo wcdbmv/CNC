@@ -3,18 +3,24 @@
 {% block title %}Outbox{% endblock %}
 
 {% block content %}
-    <h1>Outbox</h1>
+    <h1 class="text-primary mt-4 mb-2">Outbox</h1>
 
-    {% for message in messages %}
-        <div class="row">
-            <div class="col-3">
-                {% for to in message.recipient.all %}
-                    {{ to.to_email }}
-                {% endfor %}
-            </div>
-            <div class="col-9">
-                {{ message.subject }} - {{ message.body }}
-            </div>
-        </div>
-    {% endfor %}
+    <table class="table table-striped">
+        {% for message in messages %}
+            <a href="#">
+                <tr class="row">
+                    <td class="col-3 ellipsis">
+                        {% for to in message.recipient.all %}
+                            {{ to.to_email }}
+                        {% endfor %}
+                    </td>
+                    <td class="col-7 ellipsis " onclick="document.location = '{% url 'webmail:message' message.id %}';"
+                        style="cursor: pointer;">{{ message.subject }} — {{ message.body }}</td>
+                    <td class="col-2 text-right">
+                        <a href="#">Delete</a>
+                    </td>
+                </tr>
+            </a>
+        {% endfor %}
+    </table>
 {% endblock %}

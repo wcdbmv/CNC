@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+
+{% block title %}Message{% endblock %}
+
+{% block content %}
+    <h1 class="text-primary mt-4 mb-3">Message</h1>
+
+    <div class="border border-primary rounded p-4">
+        <p><b class="pr-2">From:</b> <span class="badge badge-secondary">{{ message.from_email }}</span></p>
+        <p>
+            <b class="pr-2">To:</b>
+            {% for to in message.recipient.all %}
+                <span class="badge badge-secondary">{{ to.to_email }}</span>
+            {% endfor %}
+        </p>
+        <hr>
+        <p class="mb-3">{{ message.body }}</p>
+    </div>
+{% endblock %}

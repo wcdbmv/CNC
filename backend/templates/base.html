@@ -9,13 +9,22 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css"
           integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
 
+    <style>
+        .ellipsis {
+            display: block;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+    </style>
+
     <title>{% block title %}{% endblock %} &middot; Webmail</title>
 </head>
 <body>
 
 {% if user.is_authenticated %}
     <div class="container">
-        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary rounded-bottom">
             <span class="navbar-brand">Webmail</span>
             <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarText"
                     aria-controls="navbarText" aria-expanded="false" aria-label="Toggle navigation">
@@ -23,15 +32,20 @@
             </button>
             <div class="collapse navbar-collapse ml-3" id="navbarText">
                 <ul class="navbar-nav mr-auto">
-                    <li class="nav-item {% if request.path == '/inbox/' %}active{% endif %}">
+                    <li class="nav-item mr-2 {% if request.path == '/inbox/' %}active{% endif %}">
                         <a class="nav-link" href="{% url 'webmail:inbox' %}">Inbox</a>
                     </li>
-                    <li class="nav-item {% if request.path == '/outbox/' %}active{% endif %}">
+                    <li class="nav-item mr-2 {% if request.path == '/outbox/' %}active{% endif %}">
                         <a class="nav-link" href="{% url 'webmail:outbox' %}">Outbox</a>
                     </li>
+                    <li class="nav-item mr-2">
+                        <a class="nav-link" href="#">Write a message</a>
+                    </li>
                 </ul>
+
                 <span class="navbar-text">
-                    <b>{{ user.username }}</b> {{ user.email }} <a href="{% url 'logout' %}">Logout</a>
+                    <b>{{ user.username }}</b> &middot; {{ user.email }}
+                    <a class="ml-4" href="{% url 'logout' %}">Logout</a>
                 </span>
             </div>
         </nav>
