@@ -2,20 +2,22 @@
 
 {% block title %}Outbox{% endblock %}
 
-{% block content %}
-    <h1 class="text-primary mt-4 mb-2">Outbox</h1>
+{% block h1 %}Outbox{% endblock %}
 
+{% block content %}
     <table class="table table-striped">
         {% for message in messages %}
             <tr class="row">
                 <td class="col-3 ellipsis">
-                    {% for to in message.recipient.all %}
-                        {{ to.to_email }}
+                    {% for to in message.get_to_emails %}
+                        <span class="badge badge-secondary">{{ to }}</span>
                     {% endfor %}
                 </td>
-                <td class="col-7 ellipsis " onclick="document.location = '{% url 'webmail:message' message.id %}';"
+
+                <td class="col-7 ellipsis" onclick="document.location = '{% url 'webmail:message' message.id %}';"
                     style="cursor: pointer;">{{ message.subject }} — {{ message.body }}</td>
-                <td class="col-2 text-right">
+
+                <td class="col-2 text-right p-0">
                     <form action="{% url 'webmail:message-delete' message.id %}" method="post">
                         {% csrf_token %}
                         <input type="hidden" name="message_id" value="{{ message.id }}"/>

@@ -11,4 +11,5 @@ urlpatterns = [
     path('outbox/', views.OutboxView.as_view(), name='outbox'),
     path('message/<int:pk>/', views.MessageDetailView.as_view(), name='message'),
     path('message/<int:pk>/delete/', views.MessageDeleteView.as_view(), name='message-delete'),
+    path('message/send/', views.send_email, name='message-send'),
 ]

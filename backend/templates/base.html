@@ -38,9 +38,6 @@
                     <li class="nav-item mr-2 {% if request.path == '/outbox/' %}active{% endif %}">
                         <a class="nav-link" href="{% url 'webmail:outbox' %}">Outbox</a>
                     </li>
-                    <li class="nav-item mr-2">
-                        <a class="nav-link" href="#">Write a message</a>
-                    </li>
                 </ul>
 
                 <span class="navbar-text">
@@ -53,7 +50,52 @@
 {% endif %}
 
 <div class="container">
+    <h1 class="text-primary mt-4 mb-2">
+        {% block h1 %}{% endblock %}
+        <span class="float-right">
+            <button type="button" class="btn btn-outline-success" data-toggle="modal" data-target="#exampleModal">Compose</button>
+        </span>
+    </h1>
+
     {% block content %}{% endblock %}
+</div>
+
+<!-- Compose modal -->
+<div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
+     aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exampleModalLabel">Compose message</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form action="{% url 'webmail:message-send' %}" method="post">
+                    {% csrf_token %}
+                    {{ form.as_p }}
+                    <input class="form-control" name="from_email" type="hidden" value="{{ request.user.email }}">
+                    <div class="form-group">
+                        <label for="to">To</label>
+                        <input class="form-control" name="to_emails" placeholder="user1@mail.com user2@mail.com ...">
+                    </div>
+                    <div class="form-group">
+                        <label for="subject">Subject</label>
+                        <input class="form-control" name="subject">
+                    </div>
+                    <div class="form-group">
+                        <label for="body">Body</label>
+                        <textarea class="form-control" name="body" rows="5"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Send</button>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Optional JavaScript -->

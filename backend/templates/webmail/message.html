@@ -2,19 +2,39 @@
 
 {% block title %}Message{% endblock %}
 
-{% block content %}
-    <h1 class="text-primary mt-4">Message</h1>
+{% block h1 %}Message{% endblock %}
 
+{% block content %}
     <div class="row border border-primary rounded p-4">
         <div class="col">
-            <p><b class="pr-2">From:</b> <span class="badge badge-secondary">{{ message.from_email }}</span></p>
+            <div class="mb-3 float-right">
+                <form action="{% url 'webmail:message-delete' message.id %}" method="post" style="display: inline;">
+                    {% csrf_token %}
+                    <input type="hidden" name="message_id" value="{{ message.id }}"/>
+                    <button class="btn btn-outline-danger btn-sm" type="submit">Delete</button>
+                </form>
+            </div>
+
+            <p>
+                <b class="pr-2">From:</b>
+                <span class="badge badge-secondary">
+                    {{ message.from_email }}
+                </span>
+            </p>
             <p>
                 <b class="pr-2">To:</b>
-                {% for to in message.recipient.all %}
-                    <span class="badge badge-secondary">{{ to.to_email }}</span>
+                {% for to in message.get_to_emails %}
+                    <span class="badge badge-secondary">{{ to }}</span>
                 {% endfor %}
             </p>
+            <p>
+                <b class="pr-2">Time:</b>
+                {{ message.time }}
+            </p>
+
             <hr>
+
+            <h3>{{ message.subject }}</h3>
             <p class="mb-3">{{ message.body }}</p>
         </div>
     </div>

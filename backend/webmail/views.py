@@ -1,13 +1,21 @@
+import re
+import smtplib
+
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import User
 from django.http import Http404
+from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
 from django.views.generic import ListView, CreateView, DetailView, DeleteView
 
+from webmail.forms import MessageForm
 from webmail.models import Message
+
+SMTP_SERVER = '0.0.0.0:4467'
+EMAIL_REGEX = r'[^@]+@mail.com$'
 
 
 class RegisterView(CreateView):
@@ -67,3 +75,21 @@ class MessageDeleteView(DeleteView):
         if self.request.user.email not in entity.get_to_emails() + [entity.from_email]:
             raise Http404
         return entity
+
+
+def send_email(request):
+    if request.method == 'POST':
+        form = MessageForm(request.POST)
+        if form.is_valid():
+            data = form.cleaned_data
+            from_email = data['from_email']
+            to_emails = data['to_emails'].split(' ')
+            for email in to_emails:
+                if not re.match(EMAIL_REGEX, email):
+                    raise Http404
+            msg = f'Subject: {data["subject"]}\n\n{data["body"]}'
+
+            server = smtplib.SMTP(SMTP_SERVER)
+            server.sendmail(from_email, to_emails, msg)
+            server.quit()
+        return redirect('webmail:outbox')

@@ -2,15 +2,17 @@
 
 {% block title %}Inbox{% endblock %}
 
-{% block content %}
-    <h1 class="text-primary mt-4 mb-2">Inbox</h1>
+{% block h1 %}Inbox{% endblock %}
 
+{% block content %}
     <table class="table table-striped">
         {% for message in messages %}
             <tr class="row">
-                <td class="col-3 ellipsis">{{ message.from_email }}</td>
-                <td class="col-7 ellipsis " onclick="document.location = '{% url 'webmail:message' message.id %}';"
+                <td class="col-3 ellipsis"><span class="badge badge-secondary">{{ message.from_email }}</span></td>
+
+                <td class="col-7 ellipsis" onclick="document.location = '{% url 'webmail:message' message.id %}';"
                     style="cursor: pointer;">{{ message.subject }} — {{ message.body }}</td>
+
                 <td class="col-2 text-right p-0">
                     <form action="{% url 'webmail:message-delete' message.id %}" method="post">
                         {% csrf_token %}

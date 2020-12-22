@@ -79,7 +79,7 @@ if __name__ == '__main__':
                 f'INSERT INTO webmail_message '
                 f'(from_email, time, subject, body) '
                 f'VALUES '
-                f'(\"{sender}\", \"{time}\", \"{subject}\", \"{body}\")'
+                f'(\"{sender}\", \"{time}\", \"{subject}\", \"{body[10 + len(subject):]}\")'
             )
             for recipient in to:
                 execute_statement(
