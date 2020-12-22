@@ -11,8 +11,12 @@
                 <td class="col-3 ellipsis">{{ message.from_email }}</td>
                 <td class="col-7 ellipsis " onclick="document.location = '{% url 'webmail:message' message.id %}';"
                     style="cursor: pointer;">{{ message.subject }} — {{ message.body }}</td>
-                <td class="col-2 text-right">
-                    <a href="#">Delete</a>
+                <td class="col-2 text-right p-0">
+                    <form action="{% url 'webmail:message-delete' message.id %}" method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="message_id" value="{{ message.id }}"/>
+                        <button class="btn btn-outline-danger btn-sm m-2" type="submit">Delete</button>
+                    </form>
                 </td>
             </tr>
         {% endfor %}
