@@ -50,12 +50,14 @@
 {% endif %}
 
 <div class="container">
-    <h1 class="text-primary mt-4 mb-2">
-        {% block h1 %}{% endblock %}
-        <span class="float-right">
+    {% if user.is_authenticated %}
+        <h1 class="text-primary mt-4 mb-2">
+            {% block h1 %}{% endblock %}
+            <span class="float-right">
             <button type="button" class="btn btn-outline-success" data-toggle="modal" data-target="#exampleModal">Compose</button>
         </span>
-    </h1>
+        </h1>
+    {% endif %}
 
     {% block content %}{% endblock %}
 </div>
