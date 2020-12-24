@@ -48,16 +48,12 @@ class SmtpStream(asynchat.async_chat):
     DATA_SIZE_DEFAULT = 30000000
 
     def __init__(self, server: 'SmtpServer', conn: socket.socket, data_size_limit: int = DATA_SIZE_DEFAULT,
-                 map_: Any = None, enable_smtp_utf8: bool = False, decode_data: bool = False) -> None:
-        if enable_smtp_utf8 and decode_data:
-            raise ValueError("decode_data and enable_smtp_utf8 cannot be set to True at the same time")
-
+                 map_: Any = None, decode_data: bool = False) -> None:
         super().__init__(conn, map=map_)
 
         self.__smtp_server: 'SmtpServer' = server
         self.__conn: socket.socket = conn
         self.__data_size_limit: int = data_size_limit
-        self.__enable_smtp_utf8: bool = enable_smtp_utf8
         self.__decode_data: bool = decode_data
 
         self.__chars: Chars = str_chars if decode_data else bytes_chars
@@ -71,7 +67,6 @@ class SmtpStream(asynchat.async_chat):
         try:
             self.peer: Any = conn.getpeername()
         except OSError as err:
-            # Может возникнуть состояние гонки, если другой конец закрывается до того, как мы сможем получить имя узла
             self.close()
             if err.args[0] != errno.ENOTCONN:
                 raise
@@ -239,9 +234,6 @@ class SmtpStream(asynchat.async_chat):
             self.command_size_limits['MAIL'] += 26
         if not self.__decode_data:
             self.push('250-8BITMIME')
-        if self.__enable_smtp_utf8:
-            self.push('250-SMTPUTF8')
-            self.command_size_limits['MAIL'] += 10
         self.push('250 HELP')
 
     def handle_NOOP(self, arg: Char) -> None:
@@ -319,12 +311,6 @@ class SmtpStream(asynchat.async_chat):
             body = params.pop('BODY', '7BIT')
             if body not in ['7BIT', '8BITMIME']:
                 return self.push('501 Error: BODY can only be one of 7BIT, 8BITMIME')
-        if self.__enable_smtp_utf8:
-            smtp_utf8 = params.pop('SMTPUTF8', False)
-            if smtp_utf8 is True:
-                self.__require_smtp_utf8 = True
-            elif smtp_utf8 is not False:
-                return self.push('501 Error: SMTPUTF8 takes no arguments')
         size = params.pop('SIZE', None)
         if size:
             if not size.isdigit():
@@ -356,7 +342,6 @@ class SmtpStream(asynchat.async_chat):
         params = self.__get_params(self.rcpt_options)
         if params is None:
             return self.push(syntaxerr)
-        # XXX currently there are no options we recognize.
         if len(params.keys()) > 0:
             return self.push('555 RCPT TO parameters not recognized or not implemented')
         self.__rcpt_tos.append(address)

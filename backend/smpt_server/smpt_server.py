@@ -1,5 +1,5 @@
 #! /usr/bin/env python3
-"""An RFC 5321 smtp server with optional RFC 1870 and RFC 6531 extensions.
+"""An RFC 5321 smtp server with optional RFC 1870 extensions.
 
 Options:
 
@@ -22,10 +22,6 @@ Options:
     -s limit
         Restrict the total size of the incoming message to "limit" number of
         bytes via the RFC 1870 SIZE extension.  Defaults to 30000000 bytes.
-
-    --smtputf8
-    -u
-        Enable the SMTPUTF8 extension and behave as an RFC 6531 smtp proxy.
 
 If localhost is not given then `localhost' is used, and if localport is not
 given then 8025 is used.  If remotehost is not given then `localhost' is used,
@@ -56,16 +52,12 @@ class SmtpServer(asyncore.dispatcher):
     stream_class = SmtpStream
 
     def __init__(self, local_addr: Addr, remote_addr: Addr, data_size_limit: int = SmtpStream.DATA_SIZE_DEFAULT,
-                 map_=None, enable_smtp_utf8: bool = False, decode_data: bool = False):
-        if enable_smtp_utf8 and decode_data:
-            raise ValueError("decode_data and enable_smtp_utf8 cannot be set to True at the same time")
-
+                 map_=None, decode_data: bool = False):
         super().__init__(map=map_)
 
         self._local_addr = local_addr
         self._remote_addr = remote_addr
         self._data_size_limit = data_size_limit
-        self._enable_smtp_utf8 = enable_smtp_utf8
         self._decode_data = decode_data
 
         try:
@@ -88,7 +80,6 @@ class SmtpServer(asyncore.dispatcher):
                           conn,
                           self._data_size_limit,
                           self._map,
-                          self._enable_smtp_utf8,
                           self._decode_data)
 
     def process_message(self, peer, mailfrom, rcpttos, data, **kwargs):
