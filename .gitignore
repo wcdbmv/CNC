@@ -11,3 +11,5 @@ db.sqlite3
 *.out
 *.synctex.gz
 *.toc
+
+.DS_Store
