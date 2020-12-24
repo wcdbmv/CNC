@@ -17,6 +17,7 @@
                     <form action="{% url 'webmail:message-delete' message.id %}" method="post">
                         {% csrf_token %}
                         <input type="hidden" name="message_id" value="{{ message.id }}"/>
+                        <input type="hidden" name="view_name" value="webmail:inbox"/>
                         <button class="btn btn-outline-danger btn-sm m-2" type="submit">Delete</button>
                     </form>
                 </td>

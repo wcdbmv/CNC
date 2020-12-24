@@ -69,7 +69,10 @@ class MessageDetailView(DetailView):
 @method_decorator(login_required, name='dispatch')
 class MessageDeleteView(DeleteView):
     model = Message
-    success_url = reverse_lazy('webmail:inbox')
+
+    def get_success_url(self):
+        view_name = self.request.POST.get('view_name', 'webmail:inbox')
+        return reverse_lazy(view_name)
 
     def get_object(self, *args, **kwargs):
         entity = super().get_object(*args, **kwargs)
