@@ -6,7 +6,7 @@ from webmail.managers import MessageManager
 class Message(models.Model):
     from_email = models.CharField(max_length=254)
     to_emails = models.TextField()
-    time = models.DateTimeField()
+    time = models.DateTimeField(auto_now=True)
     subject = models.TextField()
     body = models.TextField()
 

@@ -15,7 +15,7 @@
                 </td>
 
                 <td class="col-7 ellipsis" onclick="document.location = '{% url 'webmail:message' message.id %}';"
-                    style="cursor: pointer;">{{ message.subject }} — {{ message.body }}</td>
+                    style="cursor: pointer;"><b>{{ message.subject }}</b> — {{ message.body }}</td>
 
                 <td class="col-2 text-right p-0">
                     <form action="{% url 'webmail:message-delete' message.id %}" method="post">
