@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from contextlib import closing
-from smpt_server import SmtpServer
+from smtp_server import SmtpServer
 import asyncore
 import argparse
 from email.parser import Parser
