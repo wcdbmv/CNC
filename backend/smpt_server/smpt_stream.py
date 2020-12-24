@@ -5,7 +5,7 @@ import socket
 import sys
 from enum import Enum
 from typing import Union, Any, Optional, List, Tuple
-from backend.libemail.header_value_parser import get_addr_spec, get_angle_addr
+from libemail.header_value_parser import get_addr_spec, get_angle_addr
 
 
 __version__ = 'smtp_server v1.0'

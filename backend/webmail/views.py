@@ -1,5 +1,4 @@
 import re
-import smtplib
 
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -14,7 +13,9 @@ from django.views.generic import ListView, CreateView, DetailView, DeleteView
 from webmail.forms import MessageForm
 from webmail.models import Message
 
-SMTP_SERVER = '0.0.0.0:4467'
+from smtp_client import SmtpClient
+
+SMTP_SERVER = ('0.0.0.0', 4467)
 EMAIL_REGEX = r'[^@]+@mail.com$'
 
 
@@ -89,7 +90,7 @@ def send_email(request):
                     raise Http404
             msg = f'Subject: {data["subject"]}\n\n{data["body"]}'
 
-            server = smtplib.SMTP(SMTP_SERVER)
+            server = SmtpClient(*SMTP_SERVER)
             server.sendmail(from_email, to_emails, msg)
             server.quit()
         return redirect('webmail:outbox')

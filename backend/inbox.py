@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from contextlib import closing
-from backend.smpt_server import SmtpServer
+from smpt_server import SmtpServer
 import asyncore
 import argparse
 from email.parser import Parser
@@ -11,7 +11,7 @@ import datetime
 
 log = logging.Logger(__name__)
 
-DATABASE = 'backend/db.sqlite3'
+DATABASE = 'db.sqlite3'
 
 
 def execute_statement(query):
