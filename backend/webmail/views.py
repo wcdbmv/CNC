@@ -98,6 +98,6 @@ def send_email(request):
             msg = f'Subject: {data["subject"]}\n{data["body"]}'
 
             server = SmtpClient(*SMTP_SERVER)
-            server.sendmail(from_email, to_emails, msg)
+            server.send_msg(from_email, to_emails, msg)
             server.quit()
         return redirect('webmail:outbox')

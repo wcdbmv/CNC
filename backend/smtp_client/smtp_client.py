@@ -19,8 +19,6 @@ CRLF = '\r\n'
 bCRLF = b'\r\n'
 MAX_LINE = 8192  # в 8 раз больше, чем определено в RFC 5321, 4.5.3.1.6.
 
-OLDSTYLE_AUTH = re.compile(r'auth=(.*)', re.I)
-
 
 class SmtpException(OSError):
     """Базовый класс для всех исключений, создаваемых этим модулем."""
@@ -101,48 +99,48 @@ SourceAddress = Tuple[str, int]
 
 class SmtpClient:
     """Этот класс управляет подключением к серверу SMTP или ESMTP."""
-    sock = None
-    file = None
-    last_helo_response = None
+    __socket = None
+    __file = None
+    __last_helo_response = None
 
     ehlo_msg = 'ehlo'
-    last_ehlo_response = None
-    is_server_supports_esmtp = 0
+    __last_ehlo_response = None
+    __is_server_supports_esmtp = 0
     default_port = SMTP_PORT
 
-    def __init__(self, host: str = '', port: int = 0, local_hostname: Optional[str] =  None, source_address: SourceAddress = None):
-        self._host = host
-        self.supported_esmtp_features = {}
-        self.command_encoding = 'ascii'
-        self.source_address = source_address
+    def __init__(self, host: str = '', port: int = 0, local_hostname: Optional[str] = None, source_address: SourceAddress = None):
+        self.__host = host
+        self.__supported_esmtp_features = {}
+        self.__command_encoding = 'ascii'
+        self.__source_address = source_address
 
         if host:
-            (code, msg) = self.connect(host, port)
+            code, msg = self.connect(host, port)
             if code != 220:
                 self.close()
                 raise SmtpConnectError(code, msg)
         if local_hostname is not None:
-            self.local_hostname = local_hostname
+            self.__local_hostname = local_hostname
         else:
-            # RFC 2821 говорит мы должны использовать fqdn в EHLO/HELO и
+            # Согласно RFC 2821 мы должны использовать fqdn в EHLO/HELO и
             # если не получилось — то домен
             fqdn = socket.getfqdn()
             if '.' in fqdn:
-                self.local_hostname = fqdn
+                self.__local_hostname = fqdn
             else:
                 addr = '127.0.0.1'
                 try:
                     addr = socket.gethostbyname(socket.gethostname())
                 except socket.gaierror:
                     pass
-                self.local_hostname = f'[{addr}]'
+                self.__local_hostname = f'[{addr}]'
 
     def __enter__(self):
         return self
 
     def __exit__(self, *args):
         try:
-            code, message = self.docmd("QUIT")
+            code, message = self.do_command('QUIT')
             if code != 221:
                 raise SmtpResponseException(code, message)
         except SmtpServerDisconnected:
@@ -151,16 +149,16 @@ class SmtpClient:
             self.close()
 
     @staticmethod
-    def _print_debug(*args):
+    def __print_debug(*args):
         print(datetime.datetime.now().time(), *args, file=sys.stderr)
 
-    def _get_socket(self, host, port):
-        self._print_debug('connect: to', (host, port), self.source_address)
-        return socket.create_connection((host, port), source_address=self.source_address)
+    def __get_socket(self, host, port):
+        self.__print_debug('connect: to', (host, port), self.__source_address)
+        return socket.create_connection((host, port), source_address=self.__source_address)
 
     def connect(self, host='localhost', port=0, source_address=None):
         if source_address:
-            self.source_address = source_address
+            self.__source_address = source_address
 
         if not port and (host.find(':') == host.rfind(':')):
             i = host.rfind(':')
@@ -169,55 +167,50 @@ class SmtpClient:
                 try:
                     port = int(port)
                 except ValueError:
-                    raise OSError("nonnumeric port")
+                    raise OSError("non numeric port")
         if not port:
             port = self.default_port
-        sys.audit("smtplib.connect", self, host, port)
-        self.sock = self._get_socket(host, port)
-        self.file = None
-        (code, msg) = self.getreply()
-        self._print_debug('connect:', repr(msg))
-        return (code, msg)
+        sys.audit("SmtpClient.connect", self, host, port)
+        self.__socket = self.__get_socket(host, port)
+        self.__file = None
+        code, msg = self.getreply()
+        self.__print_debug('connect:', repr(msg))
+        return code, msg
 
     def send(self, s):
-        self._print_debug('send:', repr(s))
-        if self.sock:
+        self.__print_debug('send:', repr(s))
+        if self.__socket:
             if isinstance(s, str):
-                s = s.encode(self.command_encoding)
-            sys.audit("smtplib.send", self, s)
+                s = s.encode(self.__command_encoding)
+            sys.audit("SmtpClient.send", self, s)
             try:
-                self.sock.sendall(s)
+                self.__socket.sendall(s)
             except OSError:
                 self.close()
                 raise SmtpServerDisconnected('Server not connected')
         else:
             raise SmtpServerDisconnected('please run connect() first')
 
-    def putcmd(self, cmd, args=""):
-        if args == "":
-            str = '%s%s' % (cmd, CRLF)
-        else:
-            str = '%s %s%s' % (cmd, args, CRLF)
-        self.send(str)
+    def put_command(self, cmd, args=''):
+        self.send(f'{cmd}{CRLF}' if args == '' else f'{cmd} {args}{CRLF}')
 
     def getreply(self):
         resp = []
-        if self.file is None:
-            self.file = self.sock.makefile('rb')
-        while 1:
+        if self.__file is None:
+            self.__file = self.__socket.makefile('rb')
+        while True:
             try:
-                line = self.file.readline(MAX_LINE + 1)
+                line = self.__file.readline(MAX_LINE + 1)
             except OSError as e:
                 self.close()
-                raise SmtpServerDisconnected("Connection unexpectedly closed: "
-                                             + str(e))
+                raise SmtpServerDisconnected(f'Connection unexpectedly closed: {str(e)}')
             if not line:
                 self.close()
-                raise SmtpServerDisconnected("Connection unexpectedly closed")
-            self._print_debug('reply:', repr(line))
+                raise SmtpServerDisconnected('Connection unexpectedly closed')
+            self.__print_debug('reply:', repr(line))
             if len(line) > MAX_LINE:
                 self.close()
-                raise SmtpResponseException(500, "Line too long.")
+                raise SmtpResponseException(500, 'Line too long.')
             resp.append(line[4:].strip(b' \t\r\n'))
             code = line[:3]
             try:
@@ -228,95 +221,79 @@ class SmtpClient:
             if line[3:4] != b"-":
                 break
 
-        errmsg = b"\n".join(resp)
-        self._print_debug('reply: retcode (%s); Msg: %a' % (errcode, errmsg))
+        errmsg = b'\n'.join(resp)
+        self.__print_debug(f'reply: retcode ({errcode}); Msg: {errmsg}')
         return errcode, errmsg
 
-    def docmd(self, cmd, args=""):
-        self.putcmd(cmd, args)
+    def do_command(self, cmd, args=""):
+        self.put_command(cmd, args)
         return self.getreply()
 
     def helo(self, name=''):
-        self.putcmd("helo", name or self.local_hostname)
-        (code, msg) = self.getreply()
-        self.last_helo_response = msg
-        return (code, msg)
+        self.put_command('helo', name or self.__local_hostname)
+        code, msg = self.getreply()
+        self.__last_helo_response = msg
+        return code, msg
 
     def ehlo(self, name=''):
-        self.supported_esmtp_features = {}
-        self.putcmd(self.ehlo_msg, name or self.local_hostname)
-        (code, msg) = self.getreply()
+        self.__supported_esmtp_features = {}
+        self.put_command(self.ehlo_msg, name or self.__local_hostname)
+        code, msg = self.getreply()
         if code == -1 and len(msg) == 0:
             self.close()
-            raise SmtpServerDisconnected("Server not connected")
-        self.last_ehlo_response = msg
+            raise SmtpServerDisconnected('Server not connected')
+        self.__last_ehlo_response = msg
         if code != 250:
-            return (code, msg)
-        self.is_server_supports_esmtp = 1
-        assert isinstance(self.last_ehlo_response, bytes), repr(self.last_ehlo_response)
-        resp = self.last_ehlo_response.decode("latin-1").split('\n')
+            return code, msg
+        self.__is_server_supports_esmtp = 1
+        assert isinstance(self.__last_ehlo_response, bytes), repr(self.__last_ehlo_response)
+        resp = self.__last_ehlo_response.decode("latin-1").split('\n')
         del resp[0]
         for each in resp:
-            auth_match = OLDSTYLE_AUTH.match(each)
-            if auth_match:
-                self.supported_esmtp_features["auth"] = self.supported_esmtp_features.get("auth", "") \
-                                                        + " " + auth_match.groups(0)[0]
-                continue
             m = re.match(r'(?P<feature>[A-Za-z0-9][A-Za-z0-9\-]*) ?', each)
             if m:
-                feature = m.group("feature").lower()
-                params = m.string[m.end("feature"):].strip()
-                if feature == "auth":
-                    self.supported_esmtp_features[feature] = self.supported_esmtp_features.get(feature, "") \
-                                                             + " " + params
-                else:
-                    self.supported_esmtp_features[feature] = params
-        return (code, msg)
+                feature = m.group('feature').lower()
+                params = m.string[m.end('feature'):].strip()
+                self.__supported_esmtp_features[feature] = params
+        return code, msg
 
     def has_extn(self, opt):
-        return opt.lower() in self.supported_esmtp_features
+        return opt.lower() in self.__supported_esmtp_features
 
     def help(self, args=''):
-        self.putcmd("help", args)
+        self.put_command('help', args)
         return self.getreply()[1]
 
     def rset(self):
-        self.command_encoding = 'ascii'
-        return self.docmd("rset")
+        self.__command_encoding = 'ascii'
+        return self.do_command('rset')
 
-    def _rset(self):
+    def __rset(self):
         try:
             self.rset()
         except SmtpServerDisconnected:
             pass
 
     def noop(self):
-        return self.docmd("noop")
+        return self.do_command("noop")
+
+    def __mail_or_rcpt(self, command, cmd, addr, options=()):
+        option_list = ''
+        if options and self.__is_server_supports_esmtp:
+            option_list = ' ' + ' '.join(options)
+        self.put_command(command, f'{cmd}:{quote_addr(addr)}{option_list}')
+        return self.getreply()
 
     def mail(self, sender, options=()):
-        optionlist = ''
-        if options and self.is_server_supports_esmtp:
-            if any(x.lower()=='smtputf8' for x in options):
-                if self.has_extn('smtputf8'):
-                    self.command_encoding = 'utf-8'
-                else:
-                    raise SmtpNotSupportedError(
-                        'SMTPUTF8 not supported by server')
-            optionlist = ' ' + ' '.join(options)
-        self.putcmd("mail", "FROM:%s%s" % (quote_addr(sender), optionlist))
-        return self.getreply()
+        return self.__mail_or_rcpt('mail', 'FROM', sender, options)
 
-    def rcpt(self, recip, options=()):
-        optionlist = ''
-        if options and self.is_server_supports_esmtp:
-            optionlist = ' ' + ' '.join(options)
-        self.putcmd("rcpt", "TO:%s%s" % (quote_addr(recip), optionlist))
-        return self.getreply()
+    def rcpt(self, recipient, options=()):
+        return self.__mail_or_rcpt('rcpt', 'TO', recipient, options)
 
     def data(self, msg):
-        self.putcmd("data")
-        (code, repl) = self.getreply()
-        self._print_debug('data:', (code, repl))
+        self.put_command('data')
+        code, repl = self.getreply()
+        self.__print_debug('data:', (code, repl))
         if code != 354:
             raise SmtpDataError(code, repl)
         else:
@@ -325,84 +302,83 @@ class SmtpClient:
             q = quote_periods(msg)
             if q[-2:] != bCRLF:
                 q = q + bCRLF
-            q = q + b"." + bCRLF
+            q = q + b'.' + bCRLF
             self.send(q)
-            (code, msg) = self.getreply()
-            self._print_debug('data:', (code, msg))
-            return (code, msg)
+            code, msg = self.getreply()
+            self.__print_debug('data:', (code, msg))
+            return code, msg
 
-    def verify(self, address):
-        self.putcmd("vrfy", addr_only(address))
+    def vrfy(self, address):
+        self.put_command('vrfy', addr_only(address))
         return self.getreply()
-    vrfy = verify
 
     def expn(self, address):
-        self.putcmd("expn", addr_only(address))
+        self.put_command('expn', addr_only(address))
         return self.getreply()
 
     def ehlo_or_helo_if_needed(self):
-        if self.last_helo_response is None and self.last_ehlo_response is None:
+        if self.__last_helo_response is None and self.__last_ehlo_response is None:
             if not (200 <= self.ehlo()[0] <= 299):
-                (code, resp) = self.helo()
+                code, resp = self.helo()
                 if not (200 <= code <= 299):
                     raise SmtpHeloError(code, resp)
 
-    def sendmail(self, from_addr, to_addrs, msg, mail_options=(),
-                 rcpt_options=()):
+    def send_msg(self, from_addr, to_addrs, msg, mail_options=(), rcpt_options=()):
         self.ehlo_or_helo_if_needed()
         esmtp_opts = []
         if isinstance(msg, str):
             msg = fix_eols(msg).encode('ascii')
-        if self.is_server_supports_esmtp:
+        if self.__is_server_supports_esmtp:
             if self.has_extn('size'):
-                esmtp_opts.append("size=%d" % len(msg))
+                esmtp_opts.append(f'size={len(msg)}')
             for option in mail_options:
                 esmtp_opts.append(option)
-        (code, resp) = self.mail(from_addr, esmtp_opts)
+        code, resp = self.mail(from_addr, esmtp_opts)
         if code != 250:
             if code == 421:
                 self.close()
             else:
-                self._rset()
+                self.__rset()
             raise SmtpSenderRefused(code, resp, from_addr)
-        senderrs = {}
+        senders = {}
         if isinstance(to_addrs, str):
             to_addrs = [to_addrs]
         for each in to_addrs:
-            (code, resp) = self.rcpt(each, rcpt_options)
+            code, resp = self.rcpt(each, rcpt_options)
             if (code != 250) and (code != 251):
-                senderrs[each] = (code, resp)
+                senders[each] = (code, resp)
             if code == 421:
                 self.close()
-                raise SmtpRecipientsRefused(senderrs)
-        if len(senderrs) == len(to_addrs):
-            self._rset()
-            raise SmtpRecipientsRefused(senderrs)
-        (code, resp) = self.data(msg)
+                raise SmtpRecipientsRefused(senders)
+        if len(senders) == len(to_addrs):
+            self.__rset()
+            raise SmtpRecipientsRefused(senders)
+        code, resp = self.data(msg)
         if code != 250:
             if code == 421:
                 self.close()
             else:
-                self._rset()
+                self.__rset()
             raise SmtpDataError(code, resp)
-        return senderrs
+        return senders
 
     def close(self):
         try:
-            file = self.file
-            self.file = None
+            file = self.__file
+            self.__file = None
             if file:
                 file.close()
         finally:
-            sock = self.sock
-            self.sock = None
+            sock = self.__socket
+            self.__socket = None
             if sock:
                 sock.close()
 
     def quit(self):
-        res = self.docmd("quit")
-        self.last_ehlo_response = self.last_helo_response = None
-        self.supported_esmtp_features = {}
-        self.is_server_supports_esmtp = False
+        res = self.do_command('quit')
+        self.__last_ehlo_response = None
+        self.__last_helo_response = None
+        self.__supported_esmtp_features = {}
+        self.__is_server_supports_esmtp = False
         self.close()
         return res
