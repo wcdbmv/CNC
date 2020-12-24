@@ -2,6 +2,8 @@
 \usepackage[utf8]{inputenc}
 \usepackage[english,russian]{babel}
 
+\renewcommand{\ttdefault}{PTMono-TLF}
+
 \usepackage[left=30mm, right=20mm, top=20mm, bottom=20mm]{geometry}
 
 \usepackage{microtype}
@@ -63,11 +65,12 @@
 	stringstyle=\color{red},
 	commentstyle=\color{gray},
 	numbers=left,
-	numberstyle=\tiny,
+	numberstyle=\tiny\ttfamily\color{gray},
 	numbersep=5pt,
 	frame=false,
 	breaklines=true,
 	breakatwhitespace=true,
+	showstringspaces=false,
 	inputencoding=utf8/koi8-r
 }
 
