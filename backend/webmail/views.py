@@ -11,7 +11,7 @@ from django.utils.decorators import method_decorator
 from django.views.generic import ListView, CreateView, DetailView, DeleteView
 
 from webmail.forms import MessageForm
-from webmail.models import Message
+from webmail.models import Message, MessageTo, MessageFrom
 
 from smtp_client import SmtpClient
 
@@ -75,10 +75,14 @@ class MessageDeleteView(DeleteView):
         return reverse_lazy(view_name)
 
     def get_object(self, *args, **kwargs):
+        email = self.request.user.email
+        message_id = self.request.POST['message_id']
         entity = super().get_object(*args, **kwargs)
-        if self.request.user.email not in entity.get_to_emails() + [entity.from_email]:
-            raise Http404
-        return entity
+        if email in entity.get_to_emails():
+            return MessageTo.objects.get(message_id=message_id, to_email=email)
+        if email == entity.from_email:
+            return MessageFrom.objects.get(message_id=message_id, from_email=email)
+        raise Http404
 
 
 def send_email(request):
@@ -91,7 +95,7 @@ def send_email(request):
             for email in to_emails:
                 if not re.match(EMAIL_REGEX, email):
                     raise Http404
-            msg = f'Subject: {data["subject"]}\n\n{data["body"]}'
+            msg = f'Subject: {data["subject"]}\n{data["body"]}'
 
             server = SmtpClient(*SMTP_SERVER)
             server.sendmail(from_email, to_emails, msg)

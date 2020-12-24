@@ -6,4 +6,4 @@ class MessageManager(models.Manager):
         return self.filter(recipient__to_email=email).order_by('-time')
 
     def get_outbox(self, email):
-        return self.filter(from_email=email).order_by('-time')
+        return self.filter(sender__from_email=email).order_by('-time')

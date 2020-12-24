@@ -79,9 +79,15 @@ if __name__ == '__main__':
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             message_id = execute_statement(
                 f'INSERT INTO webmail_message '
-                f'(from_email, time, subject, body) '
+                f'(from_email, to_emails, time, subject, body) '
                 f'VALUES '
-                f'(\"{sender}\", \"{time}\", \"{subject}\", \"{body[10 + len(subject):]}\")'
+                f'(\"{sender}\", \"{" ".join(to)}\", \"{time}\", \"{subject}\", \"{body[10 + len(subject):]}\")'
+            )
+            execute_statement(
+                f'INSERT INTO webmail_messagefrom'
+                f'(from_email, message_id)'
+                f'VALUES'
+                f'(\"{sender}\", \"{message_id}\")'
             )
             for recipient in to:
                 execute_statement(
