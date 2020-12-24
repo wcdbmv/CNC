@@ -89,7 +89,7 @@ def addr_only(addr_string):
 
 
 def quote_periods(bin_data):
-    return re.sub(br'(?m)^\.', b'..', bin_data)
+    return re.sub(br'(?m)^\.', b'../..', bin_data)
 
 
 def fix_eols(data):
