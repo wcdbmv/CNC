@@ -73,6 +73,8 @@ if __name__ == '__main__':
 
     @inbox.collate
     def handle(to, sender, subject, body):
+        if subject is None:
+            subject = ''
         try:
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             message_id = execute_statement(
