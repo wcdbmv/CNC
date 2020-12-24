@@ -15,7 +15,6 @@ DATABASE = 'db.sqlite3'
 
 
 def execute_statement(query):
-    lastrowid = None
     with closing(sqlite3.connect(DATABASE)) as connection, connection, closing(connection.cursor()) as cursor:
         cursor.execute(query)
         lastrowid = cursor.lastrowid
@@ -28,7 +27,7 @@ class SmtpInboxServer(SmtpServer, object):
         self.__handler = handler
 
     def process_message(self, peer, mailfrom, rcpttos, data, **kwargs):
-        log.info('Collating message from {mailfrom}')
+        log.info(f'Collating message from {mailfrom}')
         subject = Parser().parsestr(data)['subject']
         log.debug(dict(to=rcpttos, sender=mailfrom, subject=subject, body=data))
         return self.__handler(to=rcpttos, sender=mailfrom, subject=subject, body=data)
