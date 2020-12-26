@@ -12,11 +12,190 @@
 
 \subsection{Библиотека, реализующая SMTP-сервер}
 
+Для каждой команды релизован соответствующий обработчик. На листинге \ref{lst:ehlo_handler} представлен обработчки для команды \code{EHLO}.
+
+\begin{lstlisting}[gobble=8, language=Python, caption={Обработчик для команды \code{EHLO}\label{lst:ehlo_handler}}]
+	def handle_EHLO(self, arg: Char) -> None:
+		if not arg:
+			return self.push(f'501 Syntax: {SmtpStream.syntax_EHLO()}')
+		if self.__seen_greeting:
+			return self.push('503 Bad sequence of commands: duplicate HELO/EHLO')
+		self.__set_reset_state()
+		self.__seen_greeting = arg
+		self.__extended_smtp = True
+		self.push(f'250-{self.__fqdn}')
+		if self.__data_size_limit:
+			self.push(f'250-SIZE {self.__data_size_limit}')
+			self.command_size_limits['MAIL'] += 26
+		if not self.__decode_data:
+			self.push('250-8BITMIME')
+			self.push('250 HELP')
+\end{lstlisting}
+
+В методе \code{\_\_found\_terminator\_in\_command\_state} (см. листинг \ref{lst:call_handler}) вызывается обработчик команды. Если обработчик не найден --- ошибка 500.
+
+\begin{lstlisting}[gobble=8, language=Python, caption={Вызов обработчика команды \code{EHLO}\label{lst:call_handler}}]
+	...
+	method = getattr(self, 'handle_' + command, None)
+	if not method:
+		return self.push(f'500 Command unrecognized: `{command}`')
+	method(arg)
+	...
+\end{lstlisting}
+
 \subsection{Библиотека, реализующая SMTP-клиент}
+
+В библиотеке SMTP-клиента реализованы методы для отправки команд. На листинге \ref{lst:ehlo} представлен метод, реализующий отправку коменды \code{EHLO}.
+
+\begin{lstlisting}[gobble=8, language=Python, caption={Отправка команды \code{EHLO}\label{lst:ehlo}}]
+	def ehlo(self, name=''):
+		self.__supported_esmtp_features = {}
+		self.put_command(self.ehlo_msg, name or self.__local_hostname)
+		code, msg = self.getreply()
+		if code == -1 and len(msg) == 0:
+			self.close()
+			raise SmtpServerDisconnected('Server not connected')
+		self.__last_ehlo_response = msg
+		if code != 250:
+			return code, msg
+		self.__is_server_supports_esmtp = 1
+		assert isinstance(self.__last_ehlo_response, bytes), repr(self.__last_ehlo_response)
+		resp = self.__last_ehlo_response.decode("latin-1").split('\n')
+		del resp[0]
+		for each in resp:
+			m = re.match(r'(?P<feature>[A-Za-z0-9][A-Za-z0-9\-]*) ?', each)
+			if m:
+				feature = m.group('feature').lower()
+				params = m.string[m.end('feature'):].strip()
+				self.__supported_esmtp_features[feature] = params
+		return code, msg
+\end{lstlisting}
+
+Метод \code{send\_msg()} вызывает команду ehlo (или helo, если это необходимо), если эти команды не были вызваны ранее, затем выполняет транзакт. Данный метод представлен на листинге \ref{lst:send_msg}.
+
+\begin{lstlisting}[gobble=8, language=Python, caption={Метод отправки сообщения\label{lst:send_msg}}]
+		def send_msg(self, from_addr, to_addrs, msg, mail_options=(), rcpt_options=()):
+		self.ehlo_or_helo_if_needed()
+		esmtp_opts = []
+		if isinstance(msg, str):
+			msg = fix_eols(msg).encode('ascii')
+		if self.__is_server_supports_esmtp:
+			if self.has_extn('size'):
+				esmtp_opts.append(f'size={len(msg)}')
+			for option in mail_options:
+				esmtp_opts.append(option)
+		code, resp = self.mail(from_addr, esmtp_opts)
+		if code != 250:
+			if code == 421:
+				self.close()
+			else:
+				self.__rset()
+			raise SmtpSenderRefused(code, resp, from_addr)
+		senders = {}
+		if isinstance(to_addrs, str):
+			to_addrs = [to_addrs]
+		for each in to_addrs:
+			code, resp = self.rcpt(each, rcpt_options)
+			if (code != 250) and (code != 251):
+				senders[each] = (code, resp)
+			if code == 421:
+				self.close()
+			raise SmtpRecipientsRefused(senders)
+		if len(senders) == len(to_addrs):
+			self.__rset()
+			raise SmtpRecipientsRefused(senders)
+		code, resp = self.data(msg)
+		if code != 250:
+			if code == 421:
+				self.close()
+			else:
+				self.__rset()
+			raise SmtpDataError(code, resp)
+		return senders
+\end{lstlisting}
 
 \section{Реализация веб-приложения}
 
 \subsection{Реализация SMTP-сервера}
+
+Классы \code{SmtpInbox} и \code{SmtpInboxServer} представлены на листинге \ref{lst:inbox}
+
+\begin{lstlisting}[gobble=8, language=Python, caption={Синтаксис поддерживаемых команд\label{lst:inbox}}]
+	class SmtpInboxServer(SmtpServer, object):
+		def __init__(self, handler, *args, **kwargs):
+			super().__init__(*args, **kwargs)
+			self.__handler = handler
+		
+		def process_message(self, peer, mailfrom, rcpttos, data, **kwargs):
+			log.info(f'Collating message from {mailfrom}')
+			subject = Parser().parsestr(data)['subject']
+			log.debug(dict(to=rcpttos, sender=mailfrom, subject=subject, body=data))
+			return self.__handler(to=rcpttos, sender=mailfrom, subject=subject, body=data)
+	
+	
+	class SmtpInbox(object):
+		def __init__(self, port=None, address=None):
+			self.port = port
+			self.address = address
+			self.collator = None
+		
+		def collate(self, collator):
+			self.collator = collator
+			return collator
+		
+		def serve(self, port=None, address=None):
+			port = port or self.port
+			address = address or self.address
+			
+			log.info(f'Starting SmtpServer at {address}:{port}')
+			
+			server = SmtpInboxServer(self.collator, (address, port), None, decode_data=True)
+		
+			try:
+				asyncore.loop()
+			except KeyboardInterrupt:
+				log.info('Cleaning up')
+				
+	if __name__ == '__main__':
+		inbox = SmtpInbox()
+		
+		@inbox.collate
+		def handle(to, sender, subject, body):
+			if subject is None:
+			subject = ''
+			try:
+				time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+				message_id = execute_statement(
+					f'INSERT INTO webmail_message '
+					f'(from_email, to_emails, time, subject, body) '
+					f'VALUES '
+					f'(\"{sender}\", \"{" ".join(to)}\", \"{time}\", 	\"{subject}\", \"{body[10 + len(subject):]}\")'
+				)
+				execute_statement(
+					f'INSERT INTO webmail_messagefrom'
+					f'(from_email, message_id)'
+					f'VALUES'
+					f'(\"{sender}\", \"{message_id}\")'
+				)
+				for recipient in to:
+				execute_statement(
+					f'INSERT INTO webmail_messageto'
+					f'(to_email, message_id)'
+					f'VALUES'
+					f'(\"{recipient}\", \"{message_id}\")'
+				)
+			except sqlite3.Error as e:
+				print('Failed to insert data:', e)
+			
+			
+		inbox.serve(address='0.0.0.0', port=4467)
+\end{lstlisting}
+
+SMTP-сервер запускается по адресу 0.0.0.0 и использует порт 4467.
+
+SMTP-сервер создает объект класса \code{SmtpInbox} и переопределяет функцию \code{handle()}, которая при получении сообщения выполняет запись в таблицы Message, MessageTo и MessageFrom базы данных веб-приложения.
+
+Функция \code{execute\_statement()} открывает соединение с базой данных, выполняет переданную ей в качестве параметра SQL-операцию (\code{INSERT INTO}), сохраняет изменения и закрывает соединение.
 
 \subsection{Реализация приложения}
 
